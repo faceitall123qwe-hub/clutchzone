@@ -48,4 +48,5 @@ Phase 1: readable blockout (flat-coloured boxes). Later: CC0 low-poly (Kenney, Q
 | 2026-10-07 | Rifle is fully accurate below 34% of run speed | As in CS; makes counter-strafing (0.07 s) worth learning |
 | 2026-10-07 | Mid wall on the defenders' side; a test forbids spawn-to-spawn sightlines | Playtest found 5 spawn pairs that could see each other through the mid doors |
 | 2026-10-07 | Ground snap when walking off steps (≤ 0.45 m) | Descending stairs made the player airborne 22 of 53 ticks: full air spread, no jumping |
+| 2026-10-07 | Hosting: Fly.io Frankfurt, shared-cpu-1x 256 MB, suspend when idle, compact snapshots | Tim asked for cheap: ~$0.50/month idle, $1.94 if always on, 87 MB per player-hour at $0.02/GB; ping from Warsaw 27-36 ms |
 | 2026-10-07 | Units in metres, CS movement constants converted (1 Hammer unit ≈ 2.54 cm) | Familiar feel |
