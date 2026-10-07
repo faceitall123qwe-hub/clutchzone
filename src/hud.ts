@@ -15,7 +15,7 @@ const html = `
 </div>
 <div id="start">
   <div class="card">
-    <h1>OUTPOST</h1>
+    <h1>CLUTCHZONE</h1>
     <p class="sub" id="sub">Browser tactical shooter</p>
     <label class="name">Your name <input id="name" maxlength="16" autocomplete="off" spellcheck="false"></label>
     <button id="online">Quick play</button>
@@ -68,7 +68,7 @@ export class Hud {
     this.el("private").style.display = opts.playing ? "none" : "block";
     this.el("rooms").style.display = opts.playing ? "none" : "grid";
     this.el("sub").textContent = opts.playing === "range" ? "Shooting range · offline"
-      : opts.room ? `Room ${opts.room}` : "Browser tactical shooter";
+      : opts.room ? `Room ${opts.room} · map Outpost` : "Browser tactical shooter";
   }
 
   error(text: string): void {

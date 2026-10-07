@@ -1,6 +1,7 @@
 # Game design
 
 ## Concept
+- Name: **Clutchzone** (domain clutchzone.pl, chosen 2026-10-07). First map: Outpost.
 - Genre: competitive multiplayer first-person shooter in the browser, in the spirit of Counter-Strike.
 - Pitch: open a link, you're in a 5v5-style tactical shooter in seconds — no install, no account.
 - References: Counter-Strike 1.6 / CS2 (movement, rounds, economy), Krunker.io (browser delivery).
