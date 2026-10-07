@@ -96,3 +96,31 @@ export function footstep(volume: number): void {
   burst(0.22 * volume, 700 + Math.random() * 300, 0.07, 0.6);
   tone(0.18 * volume, 90, 50, 0.06);
 }
+
+/** The planted bomb's beep. */
+export function beep(volume: number): void {
+  if (!ctx || volume < 0.02) return;
+  tone(0.25 * volume, 1900, 1850, 0.07, "square");
+}
+
+/** volume by distance; a deep boom with a long rumble. */
+export function explosion(volume: number): void {
+  if (!ctx || !noise) return;
+  burst(1.2 * volume, 1800, 0.25, 0.7);
+  burst(0.9 * volume, 400, 1.6, 0.35);
+  tone(1.1 * volume, 90, 25, 0.9);
+}
+
+/** Round over: a rising pair of notes for a win, a falling pair for a loss. */
+export function roundEnd(won: boolean): void {
+  if (!ctx) return;
+  const [a, b] = won ? [520, 780] : [440, 330];
+  tone(0.15, a, a, 0.22, "triangle");
+  tone(0.15, b, b, 0.4, "triangle", 0.18);
+}
+
+/** A soft click every half second while planting or defusing. */
+export function actClick(): void {
+  if (!ctx) return;
+  tone(0.06, 2600, 2400, 0.03, "square");
+}

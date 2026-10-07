@@ -2,25 +2,29 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { TICK } from "../shared/constants.ts";
 import { MAP } from "../shared/map.ts";
-import { decodePlayers, type RosterEntry, type ServerMsg } from "../shared/protocol.ts";
+import * as P from "../shared/protocol.ts";
+import { ATK, DEF, decodePlayers, type RosterEntry, type ServerMsg } from "../shared/protocol.ts";
 import { cloneSim, gunOf, shotSeed, simulate, type Cmd } from "../shared/sim.ts";
 import { PISTOL, SNIPER, spread } from "../shared/weapons.ts";
 import { Room, sanitize, type Player } from "./room.ts";
 
 const base: Omit<Cmd, "seq"> = { forward: 0, right: 0, yaw: 0, pitch: 0, jump: false, crouch: false, walk: false,
-  fire: false, reload: false, slot: 0, aim: false };
+  fire: false, reload: false, slot: 0, aim: false, use: false };
 
 function setup() {
   const room = new Room("t");
   const inbox = new Map<number, ServerMsg[]>();
-  const join = (name: string) => {
+  const join = (name: string, team?: number) => {
     const box: ServerMsg[] = [];
-    const p = room.join(name, (m) => box.push(typeof m === "string" ? JSON.parse(m) : m));
+    const p = room.join(name, (m) => box.push(typeof m === "string" ? JSON.parse(m) : m), undefined, team);
     inbox.set(p.id, box);
     return p;
   };
   return { room, inbox, join };
 }
+
+/** Run through the warmup and the freeze time into a live round (needs players on both teams). */
+const live = (room: Room) => { while (room.round.phase !== "live") room.step(); };
 
 function place(p: Player, x: number, z: number) {
   Object.assign(p.sim.move.pos, { x, y: 0, z });
@@ -46,6 +50,7 @@ test("inputs move the player and snapshots acknowledge them", () => {
 test("a shot at the head kills, a body shot does 36", () => {
   const { room, join } = setup();
   const a = join("a"), b = join("b");
+  live(room);
   place(a, 0, 10);
   place(b, 0, 0);
   room.step();
@@ -63,6 +68,7 @@ test("a shot at the head kills, a body shot does 36", () => {
 test("lag compensation: you hit where the target was on your screen", () => {
   const { room, join } = setup();
   const a = join("a"), b = join("b");
+  live(room);
   place(a, 0, 10);
   place(b, 0, 0);
   for (let i = 0; i < 5; i++) room.step();
@@ -84,6 +90,7 @@ test("lag compensation: you hit where the target was on your screen", () => {
 test("rewind is capped at 500 ms", () => {
   const { room, join } = setup();
   const a = join("a"), b = join("b");
+  live(room);
   place(a, 0, 10);
   place(b, 0, 0);
   for (let i = 0; i < 3; i++) room.step();
@@ -97,6 +104,7 @@ test("rewind is capped at 500 ms", () => {
 test("a speedhacker sending 120 commands/s runs no faster than an honest player", () => {
   const { room, join } = setup();
   const honest = join("honest"), cheat = join("cheat");
+  live(room);
   place(honest, -10, 20);
   place(cheat, 10, 20);
   for (let i = 0; i < 120; i++) { // 2 seconds
@@ -144,17 +152,29 @@ test("garbage commands are rejected or clamped", () => {
   assert.ok(Math.abs(c.yaw) < Math.PI * 2);
 });
 
-test("dead players respawn after 3 s with full health", () => {
+test("in the warmup the dead respawn after 3 s; in a round they wait for the next one", () => {
   const { room, join } = setup();
-  const a = join("a"), b = join("b");
+  const a = join("a", ATK);
+  room.step();
+  assert.equal(room.round.phase, "warmup", "one team only: warmup");
+  a.alive = false;
+  a.respawnIn = P.RESPAWN_TIME;
+  for (let i = 0; i < Math.ceil(P.RESPAWN_TIME / TICK) + 1; i++) room.step();
+  assert.ok(a.alive && a.hp === 100);
+
+  const b = join("b", DEF);
+  live(room);
   place(a, 0, 10);
   place(b, 0, 0);
   room.step();
   input(room, a, { fire: true, pitch: Math.atan2(1.64 - 1.62, 10) });
   room.step();
   assert.equal(b.alive, false);
-  for (let i = 0; i < Math.ceil(3 / TICK) + 1; i++) room.step();
-  assert.ok(b.alive && b.hp === 100);
+  assert.deepEqual([room.round.phase, room.round.winner, room.round.score], ["over", ATK, [1, 0]]);
+  for (let i = 0; i < Math.ceil(P.ROUND_END_TIME / TICK) + 1; i++) room.step();
+  assert.equal(room.round.phase, "freeze");
+  assert.equal(room.round.round, 2);
+  assert.ok(b.alive && b.hp === 100 && b.sim.move.pos.z < -20, "back at the defenders' spawn");
 });
 
 test("client prediction replays to exactly the server's state", () => {
@@ -166,7 +186,7 @@ test("client prediction replays to exactly the server's state", () => {
   for (let i = 0; i < 120; i++)
     cmds.push({ ...base, seq: a.lastSeq + i + 1, forward: i % 40 < 30 ? 1 : 0, right: i % 25 < 10 ? 1 : -1,
       yaw: Math.sin(i / 10), pitch: 0.1, jump: i % 50 === 0, crouch: i > 90, fire: i % 3 === 0,
-      slot: i < 40 ? 0 : i < 80 ? 1 : 2, aim: i > 100 });
+      slot: i < 40 ? 0 : i < 80 ? 1 : 2, aim: i > 100, use: i % 30 < 5 });
   for (const c of cmds) {
     simulate(predicted, c, shotSeed(a.id, c.seq), MAP); // what the client does locally
     room.onMessage(a, { type: "input", cmd: c, viewTick: room.tick });
@@ -183,6 +203,7 @@ const wait = (room: Room, p: Player, ticks: number, cmd: Partial<Cmd> = {}) => {
 test("switching weapons takes the draw time before the new one fires", () => {
   const { room, join } = setup();
   const a = join("a"), b = join("b");
+  live(room);
   place(a, 0, 10);
   place(b, 0, 0);
   room.step();
@@ -215,6 +236,7 @@ test("the pistol fires once per click, the rifle keeps firing", () => {
 test("the sniper rifle kills with one body shot and slows its holder down", () => {
   const { room, join } = setup();
   const a = join("a"), b = join("b"), c = join("c");
+  live(room);
   place(a, 0, 10);
   place(b, 0, 0);
   place(c, 10, 20);
@@ -240,6 +262,7 @@ test("the scope is what makes the sniper rifle accurate", () => {
 test("kill events name the weapon", () => {
   const { room, inbox, join } = setup();
   const a = join("a"), b = join("b");
+  live(room);
   place(a, 0, 10);
   place(b, 0, 0);
   wait(room, a, 40, { slot: 1 });
@@ -247,4 +270,149 @@ test("kill events name the weapon", () => {
   room.step(); room.step();
   const kills = inbox.get(b.id)!.flatMap((m) => m.type === "snap" ? m.events : []).filter((e) => e.type === "kill");
   assert.deepEqual(kills.map((k) => k.type === "kill" && [k.w, k.head]), [[1, true]]);
+});
+
+const secs = (room: Room, s: number, each?: () => void) => {
+  for (let i = 0; i < Math.round(s / TICK); i++) { each?.(); room.step(); }
+};
+const events = (inbox: Map<number, ServerMsg[]>, id: number) =>
+  inbox.get(id)!.flatMap((m) => (m.type === "snap" ? m.events : []));
+
+test("the freeze time holds everyone still, then the round goes live", () => {
+  const { room, join } = setup();
+  const a = join("a", ATK);
+  join("b", DEF);
+  room.step();
+  assert.equal(room.round.phase, "freeze");
+  const z = a.sim.move.pos.z;
+  for (let i = 0; i < 60; i++) { input(room, a, { forward: 1, fire: true }); room.step(); }
+  assert.equal(a.sim.move.pos.z, z, "can't move");
+  assert.equal(gunOf(a.sim).ammo, 30, "can't shoot");
+  live(room);
+  for (let i = 0; i < 30; i++) { input(room, a, { forward: 1 }); room.step(); }
+  assert.ok(a.sim.move.pos.z < z - 1, "moves once live");
+});
+
+test("bullets pass through teammates", () => {
+  const { room, join } = setup();
+  const a = join("a", ATK), mate = join("mate", ATK);
+  join("enemy", DEF);
+  live(room);
+  place(a, 0, 10);
+  place(mate, 0, 0);
+  input(room, a, { fire: true, pitch: Math.atan2(1.0 - 1.62, 10) });
+  room.step();
+  assert.equal(mate.hp, 100);
+});
+
+test("planting takes 3 s of holding E inside a site; the bomb explodes 40 s later", () => {
+  const { room, inbox, join } = setup();
+  const a = join("a", ATK), b = join("b", DEF);
+  live(room);
+  assert.equal(room.round.bomb.carrier, a.id, "the only attacker carries the bomb");
+  place(b, -20, 20); // far from site A
+  place(a, 19, -11); // outside the site
+  secs(room, 3.2, () => input(room, a, { use: true }));
+  assert.equal(room.round.bomb.planted, false, "not outside a site");
+  place(a, 20, -13);
+  secs(room, 2, () => input(room, a, { use: true }));
+  secs(room, 0.2, () => input(room, a, {}));
+  assert.equal(room.round.bomb.planted, false, "letting go starts over");
+  secs(room, P.PLANT_TIME + 0.1, () => input(room, a, { use: true }));
+  assert.ok(room.round.bomb.planted && room.round.bomb.site === "A");
+  assert.ok(events(inbox, b.id).some((e) => e.type === "planted"));
+  place(a, -20, 21);
+  secs(room, P.BOMB_TIME + 0.1);
+  assert.ok(events(inbox, b.id).some((e) => e.type === "exploded"));
+  assert.deepEqual([room.round.winner, room.round.reason], [ATK, "The bomb exploded"]);
+  assert.ok(a.alive && b.alive, "both far enough away");
+});
+
+test("the bomb kills whoever stands next to it", () => {
+  const { room, join } = setup();
+  const a = join("a", ATK), b = join("b", DEF);
+  live(room);
+  place(a, 20, -13);
+  place(b, -20, 20);
+  secs(room, P.PLANT_TIME + 0.1, () => input(room, a, { use: true }));
+  place(b, 21, -14);
+  secs(room, P.BOMB_TIME + 0.1, () => place(b, 21, -14));
+  assert.equal(b.alive, false);
+});
+
+test("defusing takes 7 s of holding E next to the bomb", () => {
+  const { room, join } = setup();
+  const a = join("a", ATK), b = join("b", DEF);
+  live(room);
+  place(a, -18, -16); // site B
+  place(b, 20, 20);
+  secs(room, P.PLANT_TIME + 0.1, () => input(room, a, { use: true }));
+  assert.equal(room.round.bomb.site, "B");
+  place(a, 20, 22);
+  place(b, -17, -16);
+  secs(room, P.DEFUSE_TIME - 0.5, () => input(room, b, { use: true }));
+  assert.equal(room.round.phase, "live");
+  secs(room, 0.6, () => input(room, b, { use: true }));
+  assert.deepEqual([room.round.phase, room.round.winner, room.round.reason], ["over", DEF, "Bomb defused"]);
+});
+
+test("a dead carrier drops the bomb and another attacker picks it up", () => {
+  const { room, join } = setup();
+  const a = join("a", ATK), c = join("c", ATK), b = join("b", DEF);
+  live(room);
+  const carrier = room.round.bomb.carrier === a.id ? a : c, other = carrier === a ? c : a;
+  place(carrier, 0, 10);
+  place(b, 0, 0);
+  place(other, 10, 20);
+  room.step();
+  input(room, b, { fire: true, yaw: Math.PI, pitch: Math.atan2(1.64 - 1.62, 10) });
+  room.step();
+  assert.equal(carrier.alive, false);
+  assert.deepEqual([room.round.bomb.carrier, room.round.bomb.pos?.z], [null, 10]);
+  place(other, 0.3, 10);
+  room.step();
+  assert.equal(room.round.bomb.carrier, other.id);
+});
+
+test("when the time runs out without a plant, the defenders win", () => {
+  const { room, join } = setup();
+  join("a", ATK);
+  join("b", DEF);
+  live(room);
+  secs(room, P.ROUND_TIME + 0.1);
+  assert.deepEqual([room.round.winner, room.round.reason], [DEF, "Time ran out"]);
+});
+
+test("late joiners watch until the next round; first to 7 wins, then sides swap", () => {
+  const { room, join } = setup();
+  const a = join("a", ATK), b = join("b", DEF);
+  live(room);
+  secs(room, P.LATE_JOIN + 1);
+  const late = join("late", ATK);
+  assert.equal(late.alive, false);
+  room.round.score = [P.ROUNDS_TO_WIN - 1, 0];
+  place(a, 0, 10);
+  place(b, 0, 0);
+  room.step();
+  input(room, a, { fire: true, pitch: Math.atan2(1.64 - 1.62, 10) });
+  room.step();
+  secs(room, P.ROUND_END_TIME + 0.1);
+  assert.deepEqual([room.round.phase, room.round.winner], ["matchover", ATK]);
+  secs(room, P.MATCH_END_TIME + 0.1);
+  assert.deepEqual([room.round.phase, room.round.round, room.round.score], ["freeze", 1, [0, 0]]);
+  assert.deepEqual([a.team, b.team, late.team, late.alive], [DEF, ATK, DEF, true]);
+});
+
+test("a shot judged at the present tick uses the newest positions, not ones a second old", () => {
+  const { room, join } = setup();
+  const a = join("a"), b = join("b");
+  live(room);
+  place(a, -3, 10);
+  place(b, 0, 0);
+  for (let i = 0; i < 70; i++) room.step(); // over a second of history with b at x = 0
+  place(b, -3, 0);
+  room.step();
+  input(room, a, { fire: true, pitch: chest }, room.tick + 1); // as bots do: the tick the shot runs in
+  room.step();
+  assert.equal(b.hp, 64);
 });

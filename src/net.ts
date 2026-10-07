@@ -1,6 +1,7 @@
 import { TICK } from "../shared/constants.ts";
 import {
-  decodePlayers, INTERP_TICKS, type ClientMsg, type RemotePlayer, type RosterEntry, type ServerMsg, type Snapshot,
+  decodePlayers, INTERP_TICKS, type ClientMsg, type RemotePlayer, type RosterEntry, type RoundState, type ServerMsg,
+  type Snapshot,
 } from "../shared/protocol.ts";
 
 const TICK_MS = TICK * 1000;
@@ -14,6 +15,7 @@ export class Net {
   private offset: number | null = null; // server tick ≈ now / TICK_MS + offset
   onSnap: (s: Snapshot) => void = () => {};
   private readonly roster = new Map<number, RosterEntry>();
+  round: RoundState | null = null;
   onClose: (reason: string) => void = () => {};
   /** Resolves with our player id once the server has accepted us. */
   readonly ready: Promise<number>;
@@ -56,16 +58,27 @@ export class Net {
         this.roster.clear();
         for (const e of m.r) this.roster.set(e[0], e);
       }
+      if (m.g) this.round = m.g;
       const players = decodePlayers(m.p, this.roster);
       this.buffer.push({ tick: m.tick, players: new Map(players.map((p) => [p.id, p])) });
       while (this.buffer.length > 40) this.buffer.shift();
-      this.onSnap({ tick: m.tick, you: m.you, players, events: m.events });
+      this.onSnap({ tick: m.tick, you: m.you, players, round: this.round, events: m.events });
     }
+  }
+
+  /** The server's tick now, by our smoothed estimate of its clock. */
+  serverTick(): number {
+    return this.offset === null ? 0 : performance.now() / TICK_MS + this.offset;
   }
 
   /** The (fractional) server tick other players are drawn at; also what our shots are judged against. */
   viewTick(): number {
-    return this.offset === null ? 0 : performance.now() / TICK_MS + this.offset - INTERP_TICKS;
+    return this.serverTick() - INTERP_TICKS;
+  }
+
+  /** Our own team, from the roster. */
+  team(): number {
+    return this.roster.get(this.id)?.[5] ?? 0;
   }
 
   /** Other players interpolated between the two snapshots around viewTick. */

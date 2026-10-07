@@ -13,7 +13,7 @@ round (eliminate or bomb) → earn money → next round. A match is first to N r
 
 ## Controls
 WASD move · mouse look · LMB fire · RMB scope (sniper) · R reload · Space jump · C crouch
-· Shift walk (quiet, accurate) · 1/2/3, Q, wheel weapons · Tab scoreboard · later: B buy, E plant/defuse.
+· Shift walk (quiet, accurate) · 1/2/3, Q, wheel weapons · E (hold) plant / defuse · Tab scoreboard · later: B buy.
 
 ## Weapons
 | Slot | Name | Damage (head ×4) | Fire | Magazine | Notes |
@@ -43,7 +43,17 @@ WASD move · mouse look · LMB fire · RMB scope (sniper) · R reload · Space j
          contact shading at wall bottoms, site letters A/B, wall caps
    - [x] Player models: soldier with helmet, vest and the gun they hold, leg animation, death fall
    - [x] Sounds per weapon, footsteps (own and others')
-3. **Rounds** — teams, round timer, bomb plant/defuse, buy menu, economy.
+3. **Rounds** (Tim, 2026-10-07: "go" on teams + rounds first)
+   - [x] Two teams, Attackers and Defenders; public rooms filled with bots to 4 v 4; no friendly fire
+   - [x] Round: 4 s freeze, 1:55 to play; bomb carried by one attacker, planted on site A or B (hold E 3 s),
+         explodes after 40 s; defused by holding E 7 s; dropped when the carrier dies, picked up by walking over it
+   - [x] Wins: elimination, bomb exploded, bomb defused, time ran out; first to 7, then the sides swap
+   - [x] Dead players watch a living teammate (click: next); late joiners (after 15 s) wait for the next round
+   - [x] HUD: score and timer bar, alive counts, round result, plant/defuse progress, hints, radar, team scoreboard
+   - [x] Bots play the objective: attackers take the bomb to a site and plant, pick it up when dropped;
+         defenders hold both sites and defuse
+   - [ ] Economy and buy menu (money for kills and rounds, armour, grenades), pistol rounds
+   - [ ] Smoke, flash and frag grenades
 4. **Polish & launch** — real art (CC0 low-poly), sounds, second map, matchmaking list, itch.io / CrazyGames.
 
 ## Netcode plan (phase 2)
@@ -73,4 +83,10 @@ Phase 1: readable blockout (flat-coloured boxes). Later: CC0 low-poly (Kenney, Q
 | 2026-10-07 | Three weapons for everyone (no buy menu yet), switch costs a draw time | Variety before economy; the draw time stops quick-switch tricks |
 | 2026-10-07 | Art: procedural canvas textures and box/cylinder models, no asset files | Small download, no licences to track, matches the blockout; CC0 models can replace them later |
 | 2026-10-07 | Tracers are screen-space lines from the drawn muzzle; others' shots play when their model is drawn (~100 ms late) | A world-space line from the eye was cut by the near plane and sub-pixel at range; delayed effects match the gun you see |
+| 2026-10-07 | Rounds before economy: everyone keeps all three weapons, refilled each round | The round loop is the CS core; buying needs it first |
+| 2026-10-07 | E plants and defuses (no bomb weapon slot); holding E freezes movement in simulate() | Simpler for browser newcomers; freezing in the shared sim keeps prediction exact |
+| 2026-10-07 | Defuse 7 s (CS: 10 s, 5 s with a kit) | No defuse kits until there is a buy menu |
+| 2026-10-07 | 4 v 4 in public rooms, first to 7 rounds, sides swap after a match | The 48 m map gets crowded with 5 v 5; short matches suit drop-in browser play |
+| 2026-10-07 | Bots stop before firing and chase an enemy who ducks out of sight for 2.5 s | Moving rifles miss; without the chase they walked off mid-fight |
+| 2026-10-07 | Lag compensation never rewinds past the newest recorded tick | Asking for the current tick read the ring buffer's 64-tick-old slot: bots shot at where players were a second ago |
 | 2026-10-07 | Units in metres, CS movement constants converted (1 Hammer unit ≈ 2.54 cm) | Familiar feel |

@@ -1,5 +1,5 @@
 import type { Vec3 } from "../shared/collision.ts";
-import { TICK } from "../shared/constants.ts";
+import { MAX_SPEED, TICK } from "../shared/constants.ts";
 import { MAP } from "../shared/map.ts";
 import { eyeHeight, type PlayerState } from "../shared/movement.ts";
 import { traceMap, type Cmd } from "../shared/sim.ts";
@@ -26,7 +26,21 @@ function graph(): NavGraph {
   return nav;
 }
 
+/** Walkable spots (in the part of the map every other spot can be reached from) inside a rectangle
+ * on the ground plan, or within r of a point. */
+export function spotsIn(min: readonly number[], max: readonly number[]): Vec3[] {
+  const g = graph();
+  return goals.map((i) => g.nodes[i]).filter((n) => n.x >= min[0] && n.x <= max[0] && n.z >= min[1] && n.z <= max[1]);
+}
+export function spotsNear(p: Vec3, r: number): Vec3[] {
+  const g = graph();
+  return goals.map((i) => g.nodes[i]).filter((n) => Math.hypot(n.x - p.x, n.z - p.z) <= r);
+}
+
 export type Seen = { id: number; feet: Vec3; crouched: boolean };
+/** What the room wants from a bot: go to goal; once there, hold E if use, face look. */
+export type Objective = { goal: Vec3 | null; use: boolean; look: Vec3 | null };
+export const NO_OBJECTIVE: Objective = { goal: null, use: false, look: null };
 
 const FOV = (75 * Math.PI) / 180;
 const TURN_RATE = 6; // rad/s
@@ -48,35 +62,58 @@ export class BotBrain {
   private burst = 0;
   private pause = 0;
   private lastSeen: Vec3 | null = null;
+  private lastSeenTick = -1e9;
+  private chasing = false;
   private jump = false;
   private head = false;
+  private pathGoal: Vec3 | null = null;
   private readonly rand: () => number;
 
   constructor(rand: () => number = Math.random) {
     this.rand = rand;
   }
 
-  think(me: PlayerState, yaw: number, pitch: number, ammo: number, enemies: Seen[], tick: number): Omit<Cmd, "seq"> {
+  /** Forget the last round: route, target, where enemies were last seen. */
+  reset(): void {
+    this.path = [];
+    this.pathGoal = null;
+    this.target = null;
+    this.lastSeen = null;
+    this.chasing = false;
+    this.stuckFor = 0;
+  }
+
+  think(me: PlayerState, yaw: number, pitch: number, ammo: number, enemies: Seen[], tick: number,
+        obj: Objective = NO_OBJECTIVE): Omit<Cmd, "seq"> {
     const eye = { x: me.pos.x, y: me.pos.y + eyeHeight(me), z: me.pos.z };
     if (tick % 3 === 0) this.perceive(eye, yaw, enemies);
     const target = enemies.find((e) => e.id === this.target);
     const cmd: Omit<Cmd, "seq"> = { forward: 0, right: 0, yaw, pitch, jump: false, crouch: false, walk: false,
-      fire: false, reload: false, slot: 0, aim: false };
+      fire: false, reload: false, slot: 0, aim: false, use: false };
+    const turn = TURN_RATE * TICK;
+    const face = (x: number, z: number) => {
+      const want = Math.atan2(-(x - me.pos.x), -(z - me.pos.z));
+      cmd.yaw = yaw + Math.max(-turn, Math.min(turn, wrap(want - yaw)));
+      return Math.abs(wrap(want - cmd.yaw));
+    };
 
     if (target) {
       this.targetFor += TICK;
       this.lastSeen = { ...target.feet };
+      this.lastSeenTick = tick;
+      this.chasing = false;
       const aimY = target.feet.y + (target.crouched ? 0.8 : this.head ? 1.6 : 1.2);
       const dx = target.feet.x - eye.x, dz = target.feet.z - eye.z, dy = aimY - eye.y;
       const wantYaw = Math.atan2(-dx, -dz) + this.aimError.yaw * Math.exp(-this.targetFor / 0.4);
       const wantPitch = Math.atan2(dy, Math.hypot(dx, dz)) + this.aimError.pitch * Math.exp(-this.targetFor / 0.4);
-      const turn = TURN_RATE * TICK;
       cmd.yaw = yaw + Math.max(-turn, Math.min(turn, wrap(wantYaw - yaw)));
       cmd.pitch = pitch + Math.max(-turn, Math.min(turn, wantPitch - pitch));
       const onTarget = Math.abs(wrap(wantYaw - cmd.yaw)) < 0.02 && Math.abs(wantPitch - cmd.pitch) < 0.02;
 
       this.pause = Math.max(0, this.pause - TICK);
-      if (this.targetFor >= this.reaction && onTarget && this.pause === 0) {
+      // a moving rifle sprays everywhere: stop first, like a player counter-strafing
+      const still = Math.hypot(me.vel.x, me.vel.z) < MAX_SPEED * 0.3;
+      if (this.targetFor >= this.reaction && onTarget && this.pause === 0 && still) {
         cmd.fire = true;
         if (++this.burst >= 18 + Math.floor(this.rand() * 12)) { // 3-5 shots at 10 per second
           this.burst = 0;
@@ -89,13 +126,40 @@ export class BotBrain {
       return cmd;
     }
 
-    // no enemy in sight: chase the last place we saw one, otherwise roam
     const g = graph();
-    if (this.lastSeen) {
-      this.path = findPath(g, nearestNode(g, me.pos), nearestNode(g, this.lastSeen)) ?? [];
-      this.lastSeen = null;
+    // an enemy just ducked out of sight: go after them for a moment before getting back to the job
+    const recent = this.lastSeen !== null && tick - this.lastSeenTick < 150;
+    if (recent && !this.chasing) {
+      this.path = findPath(g, nearestNode(g, me.pos), nearestNode(g, this.lastSeen!)) ?? [];
+      this.pathGoal = null;
+      this.chasing = true;
+    } else if (!recent && this.chasing) {
+      this.chasing = false;
+      this.path = [];
     }
-    if (!this.path.length) {
+    if (obj.goal && !recent) {
+      const d = Math.hypot(obj.goal.x - me.pos.x, obj.goal.z - me.pos.z);
+      if (d < 0.6) { // there: hold, plant or defuse
+        this.path = [];
+        if (obj.look) face(obj.look.x, obj.look.z);
+        cmd.pitch = pitch * 0.9;
+        cmd.use = obj.use;
+        cmd.reload = ammo < 10;
+        return cmd;
+      }
+      if (d < 2) { // the last stretch, straight and slowing down
+        cmd.forward = face(obj.goal.x, obj.goal.z) < 1.2 ? 1 : 0;
+        cmd.walk = d < 1.2;
+        cmd.pitch = pitch * 0.9;
+        return cmd;
+      }
+      if (!this.path.length || !this.pathGoal || Math.hypot(this.pathGoal.x - obj.goal.x, this.pathGoal.z - obj.goal.z) > 1.5) {
+        this.path = findPath(g, nearestNode(g, me.pos), nearestNode(g, obj.goal)) ?? [];
+        this.pathGoal = { ...obj.goal };
+      }
+    }
+    // nothing to do and nobody to chase: roam
+    if (!this.path.length && !obj.goal && !recent) {
       const goal = goals[Math.floor(this.rand() * goals.length)];
       this.path = findPath(g, nearestNode(g, me.pos), goal) ?? [];
     }
@@ -104,11 +168,8 @@ export class BotBrain {
     const next = this.path[0];
     if (next !== undefined) {
       const n = g.nodes[next];
-      const want = Math.atan2(-(n.x - me.pos.x), -(n.z - me.pos.z));
-      const turn = TURN_RATE * TICK;
-      cmd.yaw = yaw + Math.max(-turn, Math.min(turn, wrap(want - yaw)));
       cmd.pitch = pitch * 0.9;
-      cmd.forward = Math.abs(wrap(want - cmd.yaw)) < 1.2 ? 1 : 0; // turn first on sharp corners
+      cmd.forward = face(n.x, n.z) < 1.2 ? 1 : 0; // turn first on sharp corners
     }
     if (ammo < 10 && !target) cmd.reload = true;
 

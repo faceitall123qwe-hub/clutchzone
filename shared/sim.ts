@@ -6,17 +6,20 @@ import { eyeHeight, newPlayer, stepPlayer, type MoveInput, type PlayerState } fr
 import { bulletDirection, mulberry32, spread, WEAPONS } from "./weapons.ts";
 
 /** One tick of player input. The client predicts with it and the server replays the same commands.
- * slot: the weapon the player wants in hand; aim: looking through the scope. */
-export type Cmd = MoveInput & { seq: number; pitch: number; fire: boolean; reload: boolean; slot: number; aim: boolean };
+ * slot: the weapon the player wants in hand; aim: looking through the scope; use: E, plant or defuse. */
+export type Cmd = MoveInput & {
+  seq: number; pitch: number; fire: boolean; reload: boolean; slot: number; aim: boolean; use: boolean;
+};
 
-/** guns[i] belongs to WEAPONS[i]; draw: seconds until the weapon just switched to can fire. */
-export type Sim = { move: PlayerState; guns: GunState[]; slot: number; draw: number };
+/** guns[i] belongs to WEAPONS[i]; draw: seconds until the weapon just switched to can fire;
+ * frozen: the freeze time at the start of a round (look around, don't move or shoot). */
+export type Sim = { move: PlayerState; guns: GunState[]; slot: number; draw: number; frozen: boolean };
 export type Bullet = { o: Vec3; d: Vec3; w: number };
 
 export const RANGE = 120;
 
 export const newSim = (x = 0, y = 0, z = 0): Sim =>
-  ({ move: newPlayer(x, y, z), guns: WEAPONS.map(newGun), slot: 0, draw: 0 });
+  ({ move: newPlayer(x, y, z), guns: WEAPONS.map(newGun), slot: 0, draw: 0, frozen: false });
 export const cloneSim = (s: Sim): Sim => structuredClone(s);
 export const gunOf = (s: Sim): GunState => s.guns[s.slot];
 export const weaponOf = (s: Sim) => WEAPONS[s.slot];
@@ -33,8 +36,11 @@ export function simulate(s: Sim, cmd: Cmd, seed: number, boxes: readonly Box[]):
     s.draw = WEAPONS[cmd.slot].drawTime;
   }
   const w = weaponOf(s), gun = gunOf(s), zoom = scoped(s, cmd);
-  stepPlayer(s.move, cmd, C.TICK, boxes, zoom ? w.scope!.speed : w.speed);
-  const ready = s.draw === 0;
+  // holding E (planting, defusing) or the freeze time: stand still, hands busy
+  const still = s.frozen || cmd.use;
+  stepPlayer(s.move, still ? { ...cmd, forward: 0, right: 0, jump: false } : cmd, C.TICK, boxes,
+    zoom ? w.scope!.speed : w.speed);
+  const ready = s.draw === 0 && !still;
   s.draw = Math.max(0, s.draw - C.TICK);
   if (s.draw < 1e-9) s.draw = 0;
   const n = updateGun(gun, w, C.TICK, cmd.fire && ready, cmd.reload && ready);

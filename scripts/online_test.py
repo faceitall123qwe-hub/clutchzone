@@ -52,6 +52,8 @@ with sync_playwright() as pw:
 
     alice, bob = player("Alice", gpu), player("Bob", soft)
     st = lambda p: p.evaluate("__game.state()")
+    # a round starts with a freeze time: nobody moves or shoots until it's live
+    live = lambda: wait_for(lambda: (st(alice)["round"] or {}).get("phase") == "live", timeout=12)
 
     print("joining")
     check(wait_for(lambda: any(o["name"] == "Bob" for o in st(alice)["others"])), "Alice sees Bob")
@@ -67,6 +69,7 @@ with sync_playwright() as pw:
     print(f"    mean {sum(pend) / len(pend):.1f} ticks in flight")
 
     print("headshot")
+    check(live(), "the round goes live after the freeze time")
     bob.evaluate("__game.teleport(0, 0, 0); __game.look(0, 0)")
     alice.evaluate(f"__game.teleport(0, 0, 10); __game.look(0, {math.atan2(1.64 - 1.62, 10)})")
     check(wait_for(lambda: any(abs(o["z"]) < 0.2 and abs(o["x"]) < 0.2 for o in st(alice)["others"])),
@@ -81,9 +84,10 @@ with sync_playwright() as pw:
     bob.screenshot(path=str(OUT / "bob-dead.png"))
 
     print("respawn")
-    check(wait_for(lambda: st(bob)["alive"] and st(bob)["hp"] == 100, timeout=6), "Bob respawns with 100 hp")
+    check(wait_for(lambda: st(bob)["alive"] and st(bob)["hp"] == 100, timeout=8), "Bob plays again next round with 100 hp")
 
     print("movement replicates")
+    live()
     time.sleep(0.5)
     before = next(o for o in st(alice)["others"] if o["name"] == "Bob")
     bob.keyboard.down("KeyW")

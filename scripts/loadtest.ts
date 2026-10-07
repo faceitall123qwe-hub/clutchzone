@@ -27,7 +27,7 @@ function bot(room: number, n: number): void {
         sent.set(seq, performance.now());
         ws.send(JSON.stringify({ type: "input", viewTick: 0, cmd: {
           seq, forward: Math.random() < 0.8 ? 1 : 0, right: Math.random() < 0.5 ? 1 : -1, yaw, pitch: 0,
-          jump: Math.random() < 0.02, crouch: false, walk: false, fire: Math.random() < 0.3, reload: false, slot: 0, aim: false } }));
+          jump: Math.random() < 0.02, crouch: false, walk: false, fire: Math.random() < 0.3, reload: false, slot: 0, aim: false, use: false } }));
       }, 1000 / 60);
     } else if (m.type === "snap") {
       const t = sent.get(m.you.lastSeq);

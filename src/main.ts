@@ -1,21 +1,23 @@
 import * as THREE from "three";
-import { MAX_SPEED, WALK_FACTOR } from "../shared/constants.ts";
+import { CROUCH_EYE, MAX_SPEED, STAND_EYE, TICK, WALK_FACTOR } from "../shared/constants.ts";
 import { viewRecoil } from "../shared/gun.ts";
 import { DAMAGE_SCALE, type Part } from "../shared/hitbox.ts";
-import { MAP, SPAWNS } from "../shared/map.ts";
+import { MAP, siteAt, SPAWNS } from "../shared/map.ts";
 import { eyeHeight } from "../shared/movement.ts";
-import type { GameEvent, Snapshot } from "../shared/protocol.ts";
+import { ATK, DEFUSE_RANGE, TEAM_NAMES, type GameEvent, type RemotePlayer, type Snapshot } from "../shared/protocol.ts";
 import {
   cloneSim, gunOf, newSim, RANGE, shotSeed, simulate, traceMap, traceTargets, weaponOf, type Bullet, type Cmd,
 } from "../shared/sim.ts";
 import { spread, WEAPONS } from "../shared/weapons.ts";
-import { click, footstep, gunshot, hitSound, setVolume, unlockAudio } from "./audio";
+import { actClick, click, explosion, footstep, gunshot, hitSound, roundEnd, setVolume, unlockAudio } from "./audio";
+import { BombView } from "./bomb";
 import { spawnBots, type Bot } from "./bots";
 import { Decals, Flashes, Particles, Tracers } from "./effects";
 import { Hud } from "./hud";
 import { axes, isDown, locked, takeMouse } from "./input";
 import { startLoop } from "./loop";
 import { Net } from "./net";
+import { Radar } from "./radar";
 import { Remotes } from "./remote";
 import { ViewModel } from "./weapon";
 import { buildWorld } from "./world";
@@ -43,8 +45,11 @@ const hud = new Hud();
 const decals = new Decals(scene);
 const tracers = new Tracers(scene);
 const particles = new Particles(scene);
+const glow = new Particles(scene, true);
 const flashes = new Flashes(scene);
 const remotes = new Remotes(scene);
+const bombView = new BombView(scene);
+const radar = new Radar(document.getElementById("hud")!);
 setVolume(hud.settings.volume);
 hud.onSettings = (s) => setVolume(s.volume);
 
@@ -60,7 +65,9 @@ let eye = eyeHeight(me.move);
 let alive = true, hp = 100, respawnIn = 0, killedBy: string | null = null;
 let spawned = false; // first snapshot received
 let wantSlot = 0, lastSlot = 1, scopeOn = false, stepDist = 0;
-const names = new Map<number, string>();
+let act = 0, actClickIn = 0, deadAt = 0, shake = 0;
+let specId: number | null = null, specNext = false, firing = false; // whom we watch after dying
+const names = new Map<number, string>(), teams = new Map<number, number>();
 let devFire = 0, devInput = false; // dev hooks for headless checks
 let frames = 0, fps = 0, fpsSince = performance.now();
 
@@ -107,7 +114,9 @@ function ourShot(b: Bullet): void {
     }
   } else if (mode?.kind === "online") {
     // the tracer stops at whoever we see in the way; the server decides whether it really hit
-    const hit = traceTargets(b, mode.net.others().filter((x) => x.alive).map((x) => ({ id: x.id, feet: x, crouched: x.crouched })), wall.t);
+    const team = mode.net.team(); // bullets pass through teammates
+    const hit = traceTargets(b, mode.net.others().filter((x) => x.alive && x.team !== team)
+      .map((x) => ({ id: x.id, feet: x, crouched: x.crouched })), wall.t);
     if (hit) { t = hit.t; onPlayer = true; }
   }
   const end = vec(b.o).addScaledVector(vec(b.d), t);
@@ -141,23 +150,26 @@ function playFx(f: Fx): void {
 }
 
 function onSnap(s: Snapshot): void {
-  for (const p of s.players) names.set(p.id, p.name);
+  for (const p of s.players) { names.set(p.id, p.name); teams.set(p.id, p.team); }
   // Reconcile: take the server's state for the last command it ran, replay the ones it hasn't yet.
   const before = { ...me.move.pos };
   me = cloneSim(s.you.sim);
   pending = pending.filter((c) => c.seq > s.you.lastSeq);
   if (s.you.alive) for (const c of pending) simulate(me, c, shotSeed(myId, c.seq), MAP);
-  if (Math.hypot(me.move.pos.x - before.x, me.move.pos.z - before.z) > 2) Object.assign(prev, me.move.pos); // respawn
-  // on joining and after every respawn, face the middle of the map instead of the spawn wall
-  if (!spawned || (!alive && s.you.alive)) {
+  const moved = Math.hypot(me.move.pos.x - before.x, me.move.pos.z - before.z) > 2; // (re)spawned
+  if (moved) { Object.assign(prev, me.move.pos); scopeOn = false; }
+  // on joining and at every spawn, face the middle of the map instead of the spawn wall
+  if (!spawned || moved || (!alive && s.you.alive)) {
     yaw = Math.atan2(me.move.pos.x, me.move.pos.z);
     pitch = 0;
-    spawned = true;
   }
+  if (spawned && alive && !s.you.alive) deadAt = performance.now();
+  spawned = true;
   alive = s.you.alive;
   hp = s.you.hp;
   respawnIn = s.you.respawnIn;
-  killedBy = s.you.alive ? null : names.get(s.you.killedBy ?? -1) ?? "someone";
+  act = s.you.act;
+  killedBy = s.you.alive ? null : s.you.killedBy === null ? "the bomb" : names.get(s.you.killedBy) ?? "someone";
 
   const killed = new Set(s.events.flatMap((e) => (e.type === "kill" ? [e.victim] : [])));
   const lastShot = new Map<number, Fx | Extract<GameEvent, { type: "shot" }>>();
@@ -184,7 +196,22 @@ function onSnap(s: Snapshot): void {
         hud.hurt(from ? wrap(Math.atan2(-(from.x - me.move.pos.x), -(from.z - me.move.pos.z)) - yaw) : null);
       }
     } else if (e.type === "kill") {
-      hud.feed(names.get(e.killer) ?? "?", names.get(e.victim) ?? "?", e.w, e.head, e.killer === myId || e.victim === myId);
+      hud.feed(names.get(e.killer) ?? "?", names.get(e.victim) ?? "?", e.w, e.head, e.killer === myId || e.victim === myId,
+        [teams.get(e.killer) ?? 0, teams.get(e.victim) ?? 0]);
+    } else if (e.type === "planted") {
+      hud.notice(`Bomb planted at ${e.site}`);
+    } else if (e.type === "defused") {
+      hud.notice(`${names.get(e.by) ?? "?"} defused the bomb`);
+    } else if (e.type === "exploded") {
+      const at = vec(e.pos);
+      particles.explosion(at);
+      glow.fireball(at);
+      flashes.add(at.clone().add(tmp.set(0, 1, 0)), 16, 0.25);
+      const d = camera.position.distanceTo(at);
+      explosion(Math.min(1, 14 / (d + 6)));
+      shake = Math.max(shake, Math.min(1, 16 / (d + 4)));
+    } else if (e.type === "roundEnd") {
+      roundEnd(mode?.kind === "online" && e.winner === mode.net.team());
     } else if (e.type === "join" && e.id !== myId) {
       hud.notice(`${e.name} joined`);
     } else if (e.type === "leave") {
@@ -228,7 +255,7 @@ startLoop(
     yaw -= mx * sens;
     if (Math.abs(yaw) > Math.PI) yaw -= Math.PI * 2 * Math.round(yaw / (Math.PI * 2)); // the server wraps yaw too
     pitch = Math.max(-1.55, Math.min(1.55, pitch - my * sens));
-    const idle = { forward: 0, right: 0, jump: false, crouch: false, walk: false, fire: false, reload: false,
+    const idle = { forward: 0, right: 0, jump: false, crouch: false, walk: false, fire: false, reload: false, use: false,
       slot: -1, lastWeapon: false, wheel: 0, scope: false };
     const a = locked() || devInput ? axes() : idle;
 
@@ -240,8 +267,10 @@ startLoop(
     const aim = aiming();
 
     const cmd: Cmd = { forward: a.forward, right: a.right, jump: a.jump, crouch: a.crouch, walk: a.walk,
-      fire: a.fire || devFire > 0, reload: a.reload, seq: ++seq, yaw, pitch, slot: wantSlot, aim };
+      fire: a.fire || devFire > 0, reload: a.reload, seq: ++seq, yaw, pitch, slot: wantSlot, aim, use: a.use };
     devFire = Math.max(0, devFire - 1);
+    if (!alive && a.fire && !firing) specNext = true; // dead: a click watches the next teammate
+    firing = a.fire;
 
     Object.assign(prev, me.move.pos);
     const wasReloading = gunOf(me).reloading > 0;
@@ -261,8 +290,12 @@ startLoop(
       if (stepDist > 1.65) { stepDist = 0; footstep(0.35); }
     }
 
+    if (act > 0 && (actClickIn -= dt) <= 0) { actClick(); actClickIn = 0.5; }
+    shake = Math.max(0, shake - dt * 1.5);
+    if (mode?.kind === "online") bombView.update(dt, mode.net.round, mode.net.serverTick(), camera.position);
     tracers.update(dt);
     particles.update(dt);
+    glow.update(dt);
     flashes.update(dt);
     hud.update(dt);
     const w = weaponOf(me), gun = gunOf(me);
@@ -272,47 +305,119 @@ startLoop(
   (alpha) => {
     eye += (eyeHeight(me.move) - eye) * 0.35; // smooth the crouch transition
     const w = weaponOf(me), gun = gunOf(me);
-    const [rp, ry] = viewRecoil(gun, w);
-    const p = me.move.pos;
-    camera.position.set(prev.x + (p.x - prev.x) * alpha, prev.y + (p.y - prev.y) * alpha + eye, prev.z + (p.z - prev.z) * alpha);
-    camera.rotation.set(pitch + rp * VIEW_RECOIL, yaw - ry * VIEW_RECOIL, 0);
-    const aim = aiming();
-    const wantFov = fov();
+    const net = mode?.kind === "online" ? mode.net : null;
+    const round = net?.round ?? null;
+    const now = net?.serverTick() ?? 0;
+    const others = net?.others() ?? [];
+    const myTeam = net?.team() ?? ATK;
+    const inMatch = !!round && round.phase !== "warmup";
+
+    // dead in a round: after a moment, watch a living teammate through their eyes
+    const watching = !!net && !alive && inMatch && performance.now() - deadAt > 1500;
+    let spec: RemotePlayer | null = null;
+    if (watching) {
+      const mates = others.filter((o) => o.alive && o.team === myTeam);
+      if (specNext || !mates.some((m) => m.id === specId)) {
+        specId = mates[(mates.findIndex((m) => m.id === specId) + 1) % Math.max(1, mates.length)]?.id ?? null;
+        specNext = false;
+      }
+      spec = mates.find((m) => m.id === specId) ?? null;
+    }
+    const aim = aiming() && !watching;
+    if (spec) {
+      camera.position.set(spec.x, spec.y + (spec.crouched ? CROUCH_EYE : STAND_EYE), spec.z);
+      camera.rotation.set(spec.pitch, spec.yaw, 0);
+    } else if (watching) { // nobody left to watch: look over the map
+      camera.position.set(0, 30, 32);
+      camera.lookAt(0, 0, -4);
+    } else {
+      const [rp, ry] = viewRecoil(gun, w);
+      const p = me.move.pos;
+      camera.position.set(prev.x + (p.x - prev.x) * alpha, prev.y + (p.y - prev.y) * alpha + eye, prev.z + (p.z - prev.z) * alpha);
+      camera.rotation.set(pitch + rp * VIEW_RECOIL, yaw - ry * VIEW_RECOIL, 0);
+    }
+    if (shake > 0) camera.position.add(tmp.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).multiplyScalar(shake * 0.25));
+    const wantFov = watching ? hud.settings.fov : fov();
     if (camera.fov !== wantFov) {
       camera.fov = wantFov;
       camera.updateProjectionMatrix();
       particles.setView(innerHeight, wantFov);
+      glow.setView(innerHeight, wantFov);
     }
 
-    let targetName = "";
+    let target: { name: string; enemy: boolean } | null = null;
     if (mode?.kind === "range") {
       for (const b of mode.bots) b.render();
-    } else if (mode?.kind === "online") {
-      const net = mode.net;
-      const others = net.others();
-      remotes.update(others);
-      const now = net.viewTick();
-      const due = fxQueue.filter((f) => f.tick <= now + 1);
-      fxQueue = fxQueue.filter((f) => f.tick > now + 1 && f.tick < now + 120);
+    } else if (net) {
+      remotes.update(others, round?.bomb.carrier ?? null, spec?.id ?? null);
+      const drawn = net.viewTick();
+      const due = fxQueue.filter((f) => f.tick <= drawn + 1);
+      fxQueue = fxQueue.filter((f) => f.tick > drawn + 1 && f.tick < drawn + 120);
       for (const f of due) playFx(f);
       // name of whoever is under the crosshair
       const look = {
         o: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
         d: { x: -Math.sin(yaw) * Math.cos(pitch), y: Math.sin(pitch), z: -Math.cos(yaw) * Math.cos(pitch) },
       };
-      const hit = traceTargets(look, others.filter((x) => x.alive).map((x) => ({ id: x.name, feet: x, crouched: x.crouched })),
-        traceMap(look, MAP, RANGE).t);
-      if (hit) targetName = hit.id;
-      hud.scoreboard(isDown("Tab"), net.latest(), myId);
+      if (!watching) {
+        const hit = traceTargets(look, others.filter((x) => x.alive).map((x) => ({ id: x, feet: x, crouched: x.crouched })),
+          traceMap(look, MAP, RANGE).t);
+        if (hit) target = { name: hit.id.name, enemy: hit.id.team !== myTeam };
+      }
+      const latest = net.latest();
+      const carrier = round?.bomb.carrier ?? null;
+      hud.scoreboard(isDown("Tab"), latest, myId, inMatch ? round!.score : null, myTeam === ATK ? carrier : null);
+
+      if (round) {
+        const count = (alive: boolean) => [0, 1].map((t) => latest.filter((p) => p.team === t && (!alive || p.alive)).length) as [number, number];
+        const label = { warmup: "Warmup", freeze: "Get ready", live: "", over: "Next round", matchover: "Next match" }[round.phase];
+        const left = round.phase === "warmup" ? -1 : round.bomb.planted && round.phase === "live" ? null : (round.endsAt - now) * TICK;
+        hud.roundBar(true, round.score, left, label, count(true), count(false));
+        if (round.phase === "over" && round.winner !== null) hud.result(`${TEAM_NAMES[round.winner]} win`, round.reason, round.winner);
+        else if (round.phase === "matchover" && round.winner !== null)
+          hud.result(round.reason, `${round.score[0]} : ${round.score[1]}`, round.winner);
+        else hud.result(null);
+        const b = round.bomb;
+        const live = round.phase === "live" && alive;
+        hud.carrier(alive && b.carrier === myId);
+        hud.progress(act > 0 ? (myTeam === ATK ? "Planting the bomb" : "Defusing the bomb") : null, act);
+        const nearBomb = !!b.pos && camera.position.distanceTo(tmp.set(b.pos.x, b.pos.y + eye, b.pos.z)) <= DEFUSE_RANGE + 0.3;
+        hud.hint(!live || act > 0 ? null
+          : b.carrier === myId && siteAt(me.move.pos) ? "Hold E to plant the bomb"
+          : b.carrier === myId ? "Take the bomb to site A or B"
+          : myTeam !== ATK && b.planted && nearBomb ? "Hold E to defuse" : null);
+      }
+
+      // radar: teammates, enemies we can see right now, the bomb if our side knows where it is
+      const eyePos = camera.position;
+      const seen = others.filter((o) => {
+        if (!o.alive || o.team === myTeam || watching) return false;
+        const d = { x: o.x - eyePos.x, y: o.y + 1.2 - eyePos.y, z: o.z - eyePos.z };
+        const ahead = Math.abs(wrap(Math.atan2(-d.x, -d.z) - yaw)) < 1.2;
+        return ahead && traceMap({ o: eyePos, d }, MAP, 1).t >= 1;
+      });
+      const holder = latest.find((p) => p.id === carrier && p.alive);
+      const bomb = round?.bomb.pos && (myTeam === ATK || round.bomb.planted)
+        ? { x: round.bomb.pos.x, z: round.bomb.pos.z, planted: round.bomb.planted }
+        : holder && myTeam === ATK ? { x: holder.x, z: holder.z, planted: false } : null;
+      radar.draw(true, { x: camera.position.x, z: camera.position.z, yaw: camera.rotation.y, alive: !watching || !!spec }, myTeam,
+        others.filter((o) => o.alive && o.team === myTeam && o.id !== spec?.id), seen, inMatch ? bomb : null);
     }
-    hud.target(targetName);
-    hud.health(hp);
-    hud.dead(alive ? null : killedBy, respawnIn);
+    if (!net) {
+      hud.roundBar(false, [0, 0], 0, "", [0, 0], [0, 0]);
+      radar.draw(!!mode, { x: camera.position.x, z: camera.position.z, yaw, alive: true }, ATK, [], [], null);
+    }
+    hud.target(target?.name ?? "", target?.enemy);
+    hud.health(spec ? spec.hp : hp);
+    hud.own(!watching);
+    hud.spectating(spec ? `Watching ${spec.name} \u00b7 click for the next teammate` : watching ? "Waiting for the next round" : null);
+    hud.dead(alive || watching ? null : `Killed by ${killedBy}`,
+      inMatch ? "" : `Respawn in ${Math.max(0, respawnIn).toFixed(1)} s`);
     hud.scope(aim);
 
     const cone = spread(w, Math.hypot(me.move.vel.x, me.move.vel.z), me.move.onGround, me.move.crouched, gun.shot, aim);
     const pxPerRad = innerHeight / 2 / Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
-    hud.crosshair(3 + Math.min(cone * pxPerRad, 60), !w.scope);
+    hud.crosshair(3 + Math.min(cone * pxPerRad, 60), !w.scope && !watching);
     hud.weapon(me.slot, gun.ammo, gun.reserve, gun.reloading > 0 ? 1 - gun.reloading / w.reloadTime : 0);
 
     frames++;
@@ -325,7 +430,7 @@ startLoop(
     renderer.clear();
     renderer.render(scene, camera);
     renderer.clearDepth();
-    renderer.render(view.scene, view.camera);
+    if (!(mode?.kind === "online" && !alive)) renderer.render(view.scene, view.camera);
   },
 );
 
@@ -376,6 +481,7 @@ function resize(): void {
   view.resize(camera.aspect);
   renderer.setSize(innerWidth, innerHeight);
   particles.setView(innerHeight, camera.fov);
+  glow.setView(innerHeight, camera.fov);
   tracers.setResolution(innerWidth, innerHeight);
 }
 addEventListener("resize", resize);
@@ -391,6 +497,10 @@ if (import.meta.env.DEV) {
       fire: (ticks: number) => { devFire = ticks; },
       weapon: (slot: number) => { wantSlot = slot; },
       scope: (on: boolean) => { scopeOn = on; },
+      boom: (x: number, y: number, z: number) => {
+        particles.explosion(new THREE.Vector3(x, y, z));
+        glow.fireball(new THREE.Vector3(x, y, z));
+      },
       teleport: (x: number, y: number, z: number) => {
         if (mode?.kind === "online") mode.net.send({ type: "dev", teleport: { x, y, z } });
         Object.assign(me.move.pos, { x, y, z });
@@ -404,6 +514,9 @@ if (import.meta.env.DEV) {
         bots: mode?.kind === "range" ? mode.bots.map((b) => ({ hp: b.hp, alive: b.alive })) : [],
         others: mode?.kind === "online" ? mode.net.others().map((o) => ({ id: o.id, name: o.name, x: o.x, z: o.z, hp: o.hp })) : [],
         rtt: mode?.kind === "online" ? Math.round(mode.net.rtt) : 0,
+        team: mode?.kind === "online" ? mode.net.team() : 0,
+        round: mode?.kind === "online" ? mode.net.round : null,
+        act,
       }),
     },
   });

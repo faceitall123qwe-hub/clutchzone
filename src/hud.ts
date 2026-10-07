@@ -1,4 +1,4 @@
-import type { RemotePlayer } from "../shared/protocol.ts";
+import { TEAM_NAMES, type RemotePlayer } from "../shared/protocol.ts";
 import { WEAPONS } from "../shared/weapons.ts";
 
 /** Side-view silhouettes for the killfeed and weapon slots, pointing right (at the victim). */
@@ -7,6 +7,7 @@ const ICONS = [
   `<svg viewBox="0 0 32 20"><path d="M6 4H28V9H6ZM28 5.2H30V7.8H28ZM8 9H15L13 18H6ZM15 9H19V10.5L16 12.5H15Z"/></svg>`,
   `<svg viewBox="0 0 72 20"><path d="M1 8 18 7 20 9V12L6 15 1 14ZM20 7H42V12H20ZM42 8H68V9.6H42ZM68 7.2H71V10.4H68ZM23 2.4H41V5H23ZM21 1.6H25V5.8H21ZM39 1.8H43V5.6H39ZM29 5H31V7H29ZM34 5H36V7H34ZM23 12H27L25 18H21ZM32 12H37V16H32Z"/></svg>`,
 ];
+const BOMB_ICON = `<svg viewBox="0 0 24 20"><path d="M2 6H22V18H2ZM5 3H8V6H5ZM16 3H19V6H16Z"/><path d="M5 9H12V12H5Z" fill="#7cff8a"/></svg>`;
 const HEADSHOT = `<svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="5.2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M10 0V6M10 14V20M0 10H6M14 10H20" stroke="currentColor" stroke-width="1.8"/></svg>`;
 
 const html = `
@@ -18,6 +19,12 @@ const html = `
   <div id="damage"></div>
   <div id="dirs"></div>
   <div id="banner"></div>
+  <div id="round"><div class="pips" id="pa"></div><b class="atk" id="sa">0</b><div class="mid"><span id="rtime"></span><small id="rphase"></small></div><b class="def" id="sd">0</b><div class="pips" id="pd"></div></div>
+  <div id="result"><b></b><span></span></div>
+  <div id="act"><span></span><div><i></i></div></div>
+  <div id="hint"></div>
+  <div id="spec"></div>
+  <div id="carrier">${BOMB_ICON}<span>You have the bomb</span></div>
   <div id="health"><div class="row"><span>+</span><b id="hp">100</b></div><div class="bar"><i></i></div></div>
   <div id="slots">${WEAPONS.map((w, i) => `<div data-slot="${i}">${ICONS[i]}<span>${w.name}</span><kbd>${i + 1}</kbd></div>`).join("")}</div>
   <div id="ammo"><small id="wname">AR-7</small><div class="row"><b id="mag">30</b><span id="res">/ 90</span></div><div id="reload"><i></i></div></div>
@@ -25,7 +32,7 @@ const html = `
   <div id="notices"></div>
   <div id="stats"></div>
   <div id="dead"><b id="deadby"></b><span id="respawn"></span></div>
-  <div id="board"><table><thead><tr><th>Player</th><th>K</th><th>D</th><th>Ping</th></tr></thead><tbody></tbody></table></div>
+  <div id="board"></div>
 </div>
 <div id="start">
   <div class="card">
@@ -46,7 +53,8 @@ const html = `
     <dl>
       <dt>Move</dt><dd>W A S D</dd><dt>Jump</dt><dd>Space</dd><dt>Crouch</dt><dd>C</dd>
       <dt>Walk</dt><dd>Shift</dd><dt>Shoot</dt><dd>Left mouse</dd><dt>Scope</dt><dd>Right mouse (sniper)</dd>
-      <dt>Weapons</dt><dd>1 2 3 · Q · wheel</dd><dt>Reload</dt><dd>R</dd><dt>Scores</dt><dd>Tab</dd>
+      <dt>Weapons</dt><dd>1 2 3 · Q · wheel</dd><dt>Reload</dt><dd>R</dd><dt>Plant / defuse</dt><dd>hold E</dd>
+      <dt>Scores</dt><dd>Tab</dd>
     </dl>
   </div>
 </div>`;
@@ -167,15 +175,18 @@ export class Hud {
     (this.el("health").querySelector(".bar i") as HTMLElement).style.width = `${hp}%`;
   }
 
-  target(name: string): void {
+  /** Name under the crosshair: red for an enemy, green for a teammate. */
+  target(name: string, enemy = true): void {
     this.el("target").textContent = name;
+    this.el("target").style.color = enemy ? "#ffb4aa" : "#9dffa8";
   }
 
-  dead(by: string | null, respawnIn: number): void {
-    this.el("dead").style.display = by === null ? "none" : "grid";
-    if (by !== null) {
-      this.el("deadby").textContent = `Killed by ${by}`;
-      this.el("respawn").textContent = `Respawn in ${Math.max(0, respawnIn).toFixed(1)} s`;
+  /** The death screen; null hides it. */
+  dead(title: string | null, sub = ""): void {
+    this.el("dead").style.display = title === null ? "none" : "grid";
+    if (title !== null) {
+      this.el("deadby").textContent = title;
+      this.el("respawn").textContent = sub;
       this.streak = 0;
     }
   }
@@ -216,11 +227,65 @@ export class Hud {
     setTimeout(() => d.remove(), 1200);
   }
 
-  feed(killer: string, victim: string, weapon: number, head: boolean, mine: boolean): void {
+  /** Teams colour the names; weapon -1 is the bomb, which has no killer. */
+  feed(killer: string, victim: string, weapon: number, head: boolean, mine: boolean, teams: [number, number] = [0, 1]): void {
     const row = document.createElement("div");
     row.className = mine ? "kill mine" : "kill";
-    row.innerHTML = `<b class="k">${esc(killer)}</b>${ICONS[weapon] ?? ""}${head ? `<span class="hs">${HEADSHOT}</span>` : ""}<b class="v">${esc(victim)}</b>`;
+    row.innerHTML = (weapon >= 0 ? `<b class="t${teams[0]}">${esc(killer)}</b>${ICONS[weapon] ?? ""}` : BOMB_ICON) +
+      `${head ? `<span class="hs">${HEADSHOT}</span>` : ""}<b class="t${teams[1]}">${esc(victim)}</b>`;
     this.push("feed", row, 6000, 5);
+  }
+
+  /** Top bar: score, time left (null while the bomb ticks), who is still alive on each side. */
+  roundBar(show: boolean, score: [number, number], timeLeft: number | null, phase: string,
+           alive: [number, number], total: [number, number]): void {
+    this.el("round").style.display = show ? "flex" : "none";
+    if (!show) return;
+    this.el("sa").textContent = String(score[0]);
+    this.el("sd").textContent = String(score[1]);
+    const t = this.el("rtime");
+    t.classList.toggle("bomb", timeLeft === null);
+    t.innerHTML = timeLeft === null ? BOMB_ICON : timeLeft < 0 ? "–"
+      : `${Math.floor(Math.max(0, timeLeft) / 60)}:${String(Math.floor(Math.max(0, timeLeft) % 60)).padStart(2, "0")}`;
+    this.el("rphase").textContent = phase;
+    for (const [id, i] of [["pa", 0], ["pd", 1]] as const)
+      this.el(id).innerHTML = Array.from({ length: total[i] }, (_, k) => `<i class="${k < alive[i] ? "on" : ""}"></i>`).join("");
+  }
+
+  /** The big line in the middle when a round or the match is decided. */
+  result(text: string | null, sub = "", team = 0): void {
+    const r = this.el("result");
+    r.style.display = text ? "grid" : "none";
+    r.className = `t${team}`;
+    if (text) { r.querySelector("b")!.textContent = text; r.querySelector("span")!.textContent = sub; }
+  }
+
+  /** Planting or defusing progress, 0..1. */
+  progress(label: string | null, frac: number): void {
+    const a = this.el("act");
+    a.style.display = label ? "grid" : "none";
+    if (!label) return;
+    a.querySelector("span")!.textContent = label;
+    (a.querySelector("i") as HTMLElement).style.width = `${Math.min(1, frac) * 100}%`;
+  }
+
+  hint(text: string | null): void {
+    this.el("hint").textContent = text ?? "";
+  }
+
+  /** Watching a teammate after dying: their name, or the waiting text. */
+  spectating(text: string | null): void {
+    this.el("spec").textContent = text ?? "";
+    this.el("spec").style.display = text ? "block" : "none";
+  }
+
+  carrier(on: boolean): void {
+    this.el("carrier").style.display = on ? "flex" : "none";
+  }
+
+  /** Our own panels (health, ammo, weapons): hidden while watching someone else. */
+  own(show: boolean): void {
+    for (const id of ["health", "ammo", "slots"]) this.el(id).style.visibility = show ? "visible" : "hidden";
   }
 
   notice(text: string): void {
@@ -237,12 +302,17 @@ export class Hud {
     setTimeout(() => row.remove(), ms);
   }
 
-  scoreboard(show: boolean, players: RemotePlayer[], me: number): void {
+  /** One table per team; score: rounds won, null outside a match (shooting range, warmup). */
+  scoreboard(show: boolean, players: RemotePlayer[], me: number, score: [number, number] | null, carrier: number | null): void {
     this.el("board").style.display = show ? "grid" : "none";
     if (!show) return;
-    const rows = [...players].sort((a, b) => b.kills - a.kills || a.deaths - b.deaths)
-      .map((p) => `<tr class="${p.id === me ? "me" : ""}"><td>${esc(p.name)}</td><td>${p.kills}</td><td>${p.deaths}</td><td>${p.ping}</td></tr>`);
-    this.el("board").querySelector("tbody")!.innerHTML = rows.join("");
+    this.el("board").innerHTML = [0, 1].map((team) => {
+      const rows = players.filter((p) => p.team === team).sort((a, b) => b.kills - a.kills || a.deaths - b.deaths)
+        .map((p) => `<tr class="${p.id === me ? "me" : ""} ${p.alive ? "" : "dead"}"><td>${esc(p.name)}${p.id === carrier ? ` ${BOMB_ICON}` : ""}</td>` +
+          `<td>${p.kills}</td><td>${p.deaths}</td><td>${p.ping}</td></tr>`).join("");
+      return `<div class="team t${team}"><div class="cap"><b>${TEAM_NAMES[team]}</b>${score ? `<span>${score[team]}</span>` : ""}</div>` +
+        `<table><thead><tr><th>Player</th><th>K</th><th>D</th><th>Ping</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+    }).join("");
   }
 
   update(dt: number): void {

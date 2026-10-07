@@ -229,3 +229,14 @@ export function legKit(o: Outfit, h: number, crouched: boolean, k: Kit): void {
   k.box(o.pants, [0.17, legsTop - 0.1, 0.19], [0, -(legsTop - 0.1) / 2, 0]);
   k.box(0x2b2722, [0.18, 0.12, 0.27], [0, -legsTop + 0.06, -0.03]);
 }
+
+/** The bomb: a charge with a keypad and a light, about the size of a shoebox. Origin at its bottom centre. */
+export function bombKit(k: Kit): void {
+  k.box(0x3b3f2e, [0.3, 0.1, 0.2], [0, 0.05, 0]);
+  k.box(0x2a2a26, [0.32, 0.03, 0.05], [0, 0.03, -0.07]); // straps
+  k.box(0x2a2a26, [0.32, 0.03, 0.05], [0, 0.03, 0.07]);
+  k.box(0x161616, [0.14, 0.012, 0.11], [0.05, 0.106, 0], undefined, "metal"); // keypad
+  k.box(0x2f6a3a, [0.08, 0.006, 0.04], [-0.07, 0.103, -0.03], undefined, "glass"); // display
+  k.box(0xb02a20, [0.012, 0.012, 0.18], [-0.1, 0.11, 0.02]); // wires
+  k.box(0x2050b0, [0.012, 0.012, 0.18], [-0.12, 0.11, 0.02]);
+}

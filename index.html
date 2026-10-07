@@ -50,11 +50,37 @@
     #feed .kill.mine { border-color: #e04a3a; background: #2a0f0dc8; }
     #feed .kill svg { height: 15px; fill: #f2f2f2; filter: drop-shadow(0 1px 1px #000); }
     #feed .hs { color: #ff5a4a; display: flex; } #feed .hs svg { height: 15px; fill: none; }
-    #feed .k { color: #f0c552; } #feed .v { color: #9cc8ff; }
+    .t0 { --team: #f0b84a; } .t1 { --team: #6fb0ff; }
+    #feed b.t0, #feed b.t1 { color: var(--team); }
+    #feed > .kill > svg:first-child { height: 15px; }
+    #round { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); display: none; align-items: center; gap: 10px; }
+    #round > b { min-width: 40px; padding: 4px 8px; text-align: center; font-size: 24px; background: #0b0e13b8; }
+    #round .atk { color: #f0b84a; box-shadow: inset 0 -3px #f0b84a; } #round .def { color: #6fb0ff; box-shadow: inset 0 -3px #6fb0ff; }
+    #round .mid { display: grid; justify-items: center; min-width: 76px; padding: 3px 10px; background: #0b0e13d0; }
+    #round .mid span { font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; }
+    #round .mid span.bomb svg { height: 22px; fill: #ff4a3a; animation: blink 1s steps(2) infinite; }
+    #round .mid small { font-size: 10px; letter-spacing: .14em; text-transform: uppercase; opacity: .7; }
+    #round .pips { display: flex; gap: 3px; }
+    #round .pips i { width: 8px; height: 18px; background: #ffffff22; }
+    #pa i.on { background: #f0b84a; } #pd i.on { background: #6fb0ff; }
+    @keyframes blink { 50% { opacity: .25; } }
+    #result { position: absolute; left: 50%; top: 22%; transform: translateX(-50%); display: none; justify-items: center; gap: 6px;
+      padding: 14px 40px; background: linear-gradient(90deg, transparent, #0b0e13d8 20% 80%, transparent); }
+    #result b { font-size: 34px; letter-spacing: .14em; color: var(--team); text-transform: uppercase; }
+    #result span { font-size: 15px; opacity: .85; }
+    #act { position: absolute; left: 50%; top: 58%; transform: translateX(-50%); display: none; gap: 6px; justify-items: center; font-size: 14px; font-weight: 700; }
+    #act div { width: 260px; height: 8px; background: #0008; border: 1px solid #fff4; }
+    #act i { display: block; height: 100%; width: 0; background: #e2b23c; }
+    #hint { position: absolute; left: 50%; top: 66%; transform: translateX(-50%); font-size: 14px; font-weight: 600; color: #ffe08a; }
+    #spec { position: absolute; left: 50%; bottom: 90px; transform: translateX(-50%); display: none; padding: 6px 16px; font-size: 15px; background: #0b0e13b8; }
+    #carrier { position: absolute; right: 28px; bottom: 214px; display: none; align-items: center; gap: 8px; padding: 4px 10px; font-size: 12px;
+      font-weight: 700; color: #ffd27a; background: #2a1a0dc8; border: 1px solid #e2b23c88; }
+    #carrier svg { height: 16px; fill: #ffd27a; }
     #notices { position: absolute; left: 28px; bottom: 96px; display: grid; gap: 3px; font-size: 13px; opacity: .85; }
     #notices div { transition: opacity .4s; }
     #feed .out, #notices .out { opacity: 0; }
-    #stats { position: absolute; top: 18px; left: 22px; font-size: 13px; opacity: .85; }
+    #stats { position: absolute; top: 190px; left: 14px; font-size: 13px; opacity: .85; }
+    #radar { position: absolute; top: 12px; left: 12px; width: 168px; height: 168px; border: 1px solid #ffffff22; border-radius: 4px; }
     #banner { position: absolute; left: 50%; top: 64%; transform: translateX(-50%); display: none; text-align: center; }
     #banner.pop { display: grid; gap: 4px; justify-items: center; animation: pop .25s ease-out; }
     #banner b { font-size: 18px; letter-spacing: .2em; color: #ffd27a; }
@@ -96,11 +122,16 @@
     #damage { position: absolute; inset: 0; opacity: 0; background: radial-gradient(ellipse at center, transparent 55%, rgba(200,20,20,.55)); }
     #dead { position: absolute; inset: 0; display: none; place-content: center; text-align: center; gap: 8px; background: rgba(60,0,0,.25); }
     #dead b { font-size: 30px; } #dead span { font-size: 16px; opacity: .85; }
-    #board { position: absolute; inset: 0; display: none; place-content: center; }
-    #board table { background: #10141bdd; border-collapse: collapse; min-width: 420px; font-size: 15px; }
-    #board th, #board td { padding: 8px 16px; text-align: left; border-bottom: 1px solid #2c3440; }
+    #board { position: absolute; inset: 0; display: none; place-content: center; gap: 14px; }
+    #board .team { border-top: 3px solid var(--team); background: #10141bdd; }
+    #board table { border-collapse: collapse; min-width: 460px; font-size: 15px; }
+    #board .cap { display: flex; justify-content: space-between; align-items: center; padding: 8px 16px; font-size: 16px; color: var(--team); }
+    #board .cap span { font-size: 20px; font-weight: 800; }
+    #board th, #board td { padding: 7px 16px; text-align: left; border-bottom: 1px solid #2c3440; }
     #board th { font-size: 12px; opacity: .6; text-transform: uppercase; }
     #board tr.me td { color: #e2b23c; font-weight: 700; }
+    #board tr.dead td { opacity: .45; }
+    #board svg { height: 12px; fill: #ffd27a; vertical-align: -1px; }
   </style>
 </head>
 <body>

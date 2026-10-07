@@ -46,6 +46,7 @@ export function axes() {
     walk: down("ShiftLeft"),
     fire: down("Mouse0"),
     reload: down("KeyR"),
+    use: down("KeyE"),
   };
   // presses, not holds: weapon choice and the scope toggle
   const keys = {

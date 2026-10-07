@@ -53,3 +53,18 @@ export const SPAWNS = {
   attackers: [-6, -3, 0, 3, 6].map((x) => ({ x, z: 22, yaw: 0 })),
   defenders: [-6, -3, 0, 3, 6].map((x) => ({ x, z: -22, yaw: Math.PI })),
 };
+
+/** Bomb sites on the ground plan (x, z): the bomb can be planted anywhere inside. */
+export const SITES = {
+  A: { min: [14, -24], max: [24, -12] },
+  B: { min: [-24, -24], max: [-14, -10] },
+} as const;
+export type Site = keyof typeof SITES;
+
+export function siteAt(p: { x: number; z: number }): Site | null {
+  for (const k of ["A", "B"] as Site[]) {
+    const s = SITES[k];
+    if (p.x >= s.min[0] && p.x <= s.max[0] && p.z >= s.min[1] && p.z <= s.max[1]) return k;
+  }
+  return null;
+}

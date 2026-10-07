@@ -2,11 +2,12 @@ import * as THREE from "three";
 import { CROUCH_HEIGHT, STAND_HEIGHT } from "../shared/constants.ts";
 import type { RemotePlayer } from "../shared/protocol.ts";
 import { WEAPONS } from "../shared/weapons.ts";
-import { armsKit, Kit, legKit, OUTFITS, torsoKit, type Outfit } from "./models";
+import { armsKit, bombKit, Kit, legKit, OUTFITS, torsoKit, type Outfit } from "./models";
 
 /** One stance (standing or crouched): torso, legs that swing from the hips, and arms + gun that tilt
  * with the view pitch around the shoulders. Sized to the hitboxes, so what you see is what you hit. */
-type Stance = { group: THREE.Group; aim: THREE.Group; guns: THREE.Mesh[]; muzzles: THREE.Vector3[]; legs: THREE.Group[] };
+type Stance = { group: THREE.Group; aim: THREE.Group; guns: THREE.Mesh[]; muzzles: THREE.Vector3[]; legs: THREE.Group[];
+  bomb: THREE.Mesh };
 
 export function stance(o: Outfit, crouched: boolean, mat: THREE.Material): Stance {
   const h = crouched ? CROUCH_HEIGHT : STAND_HEIGHT;
@@ -35,11 +36,18 @@ export function stance(o: Outfit, crouched: boolean, mat: THREE.Material): Stanc
     group.add(pivot);
     return pivot;
   });
-  return { group, aim, guns, muzzles, legs };
+  const bk = new Kit();
+  bombKit(bk);
+  const bomb = bk.buildSingle(mat);
+  bomb.position.set(0, h * 0.62, 0.16); // strapped to the back
+  bomb.rotation.x = Math.PI / 2;
+  bomb.visible = false;
+  group.add(bomb);
+  return { group, aim, guns, muzzles, legs, bomb };
 }
 
 type View = {
-  root: THREE.Group; stand: Stance; crouch: Stance; mat: THREE.MeshStandardMaterial;
+  root: THREE.Group; stand: Stance; crouch: Stance; mat: THREE.MeshStandardMaterial; team: number;
   weapon: number; alive: boolean; dying: number; phase: number; last: THREE.Vector3; hurt: number;
 };
 
@@ -58,8 +66,8 @@ export class Remotes {
 
   private create(p: RemotePlayer): View {
     const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.75, metalness: 0.05 });
-    const o = OUTFITS[p.id % OUTFITS.length];
-    const v: View = { root: new THREE.Group(), stand: stance(o, false, mat), crouch: stance(o, true, mat), mat,
+    const o = OUTFITS[p.team];
+    const v: View = { root: new THREE.Group(), stand: stance(o, false, mat), crouch: stance(o, true, mat), mat, team: p.team,
       weapon: 0, alive: p.alive, dying: 0, phase: 0, last: new THREE.Vector3(p.x, p.y, p.z), hurt: 0 };
     v.root.rotation.order = "YXZ"; // yaw first, then the death fall around the body's own axis
     v.root.add(v.stand.group, v.crouch.group);
@@ -68,18 +76,22 @@ export class Remotes {
     return v;
   }
 
-  update(players: RemotePlayer[]): void {
+  /** carrier: who has the bomb on their back; hidden: the player we're watching through their eyes. */
+  update(players: RemotePlayer[], carrier: number | null = null, hidden: number | null = null): void {
     const now = performance.now(), dt = Math.min(0.1, (now - this.lastTime) / 1000);
     this.lastTime = now;
     const seen = new Set<number>();
     for (const p of players) {
+      let v = this.views.get(p.id);
+      if (v && v.team !== p.team) { this.remove(p.id, v); v = undefined; } // sides swapped after a match
+      v ??= this.create(p);
       seen.add(p.id);
-      const v = this.views.get(p.id) ?? this.create(p);
       if (v.alive && !p.alive) v.dying = DEATH_TIME;
       v.alive = p.alive;
       v.dying = Math.max(0, v.dying - dt);
       const fall = p.alive ? 0 : 1 - (v.dying / DEATH_TIME) ** 2;
-      v.root.visible = p.alive || v.dying > 0;
+      v.root.visible = (p.alive || v.dying > 0) && p.id !== hidden;
+      v.stand.bomb.visible = v.crouch.bomb.visible = p.id === carrier;
       v.root.position.set(p.x, p.y - fall * 0.15, p.z);
       v.root.rotation.set(fall * Math.PI * 0.48, p.yaw, 0);
 
@@ -104,13 +116,14 @@ export class Remotes {
       v.hurt = Math.max(0, v.hurt - dt);
       v.mat.emissive.setRGB(v.hurt > 0 ? 0.5 : 0, 0, 0);
     }
-    for (const [id, v] of this.views)
-      if (!seen.has(id)) {
-        this.scene.remove(v.root);
-        v.root.traverse((o) => { if (o instanceof THREE.Mesh) o.geometry.dispose(); });
-        v.mat.dispose();
-        this.views.delete(id);
-      }
+    for (const [id, v] of this.views) if (!seen.has(id)) this.remove(id, v);
+  }
+
+  private remove(id: number, v: View): void {
+    this.scene.remove(v.root);
+    v.root.traverse((o) => { if (o instanceof THREE.Mesh) o.geometry.dispose(); });
+    v.mat.dispose();
+    this.views.delete(id);
   }
 
   /** Muzzle of the gun as drawn now, or false if we don't draw that player. */

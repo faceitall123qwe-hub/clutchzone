@@ -130,15 +130,18 @@ export class Particles {
   private readonly maxLife = new Float32Array(MAX_PARTICLES);
   private readonly grow = new Float32Array(MAX_PARTICLES);
   private readonly gravity = new Float32Array(MAX_PARTICLES);
+  private readonly alpha = new Float32Array(MAX_PARTICLES);
   private next = 0;
 
-  constructor(scene: THREE.Scene) {
+  /** additive: for things that glow (fire), drawn brighter where they overlap. */
+  constructor(scene: THREE.Scene, additive = false) {
     this.geo.setAttribute("position", new THREE.BufferAttribute(this.pos, 3));
     this.geo.setAttribute("color", new THREE.BufferAttribute(this.col, 4));
     this.geo.setAttribute("size", new THREE.BufferAttribute(this.size, 1));
     const mat = new THREE.ShaderMaterial({
       transparent: true,
       depthWrite: false,
+      blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending,
       uniforms: { scale: { value: innerHeight / 2 } },
       vertexShader: `
         attribute vec4 color; attribute float size; varying vec4 vColor; uniform float scale;
@@ -170,7 +173,7 @@ export class Particles {
   }
 
   private spawn(p: THREE.Vector3, v: THREE.Vector3, rgb: [number, number, number], size: number, life: number,
-                grow: number, gravity: number): void {
+                grow: number, gravity: number, alpha = 1): void {
     const i = this.next;
     this.next = (this.next + 1) % MAX_PARTICLES;
     this.pos.set([p.x, p.y, p.z], i * 3);
@@ -180,6 +183,7 @@ export class Particles {
     this.life[i] = this.maxLife[i] = life;
     this.grow[i] = grow;
     this.gravity[i] = gravity;
+    this.alpha[i] = alpha;
   }
 
   private readonly v = new THREE.Vector3();
@@ -199,6 +203,28 @@ export class Particles {
     if (metal) for (let i = 0; i < 6; i++) {
       this.v.copy(normal).multiplyScalar(3 + Math.random() * 3).add({ x: this.rnd(3), y: this.rnd(3), z: this.rnd(3) } as THREE.Vector3);
       this.spawn(p, this.v, [1, 0.8, 0.4], 0.035, 0.18 + Math.random() * 0.12, 0, 0.6);
+    }
+  }
+
+  /** The bomb going off, on the glowing (additive) particles: a fireball. */
+  fireball(p: THREE.Vector3): void {
+    for (let i = 0; i < 80; i++) {
+      this.v.set(this.rnd(6), 1 + Math.random() * 7, this.rnd(6));
+      const k = Math.random();
+      this.spawn(p, this.v, [1, 0.45 + k * 0.35, 0.1 + k * 0.15], 1 + Math.random() * 1.5, 0.4 + Math.random() * 0.6, 2.5, -0.3, 0.7);
+    }
+  }
+
+  /** The bomb going off: a column of smoke that grows and lingers, flying debris. */
+  explosion(p: THREE.Vector3): void {
+    for (let i = 0; i < 60; i++) {
+      this.v.set(this.rnd(2), 2 + Math.random() * 5, this.rnd(2));
+      const g = 0.2 + Math.random() * 0.15;
+      this.spawn(p, this.v, [g, g, g * 0.95], 0.6 + Math.random() * 0.6, 3 + Math.random() * 2, 1.4, -0.03, 0.55);
+    }
+    for (let i = 0; i < 50; i++) {
+      this.v.set(this.rnd(13), 4 + Math.random() * 9, this.rnd(13));
+      this.spawn(p, this.v, [0.2, 0.17, 0.12], 0.08, 1.4, 0, 1);
     }
   }
 
@@ -222,7 +248,7 @@ export class Particles {
         this.pos[i * 3 + a] += this.vel[i * 3 + a] * dt;
       }
       this.size[i] += this.grow[i] * dt;
-      this.col[i * 4 + 3] = k;
+      this.col[i * 4 + 3] = k * this.alpha[i];
     }
     this.geo.attributes.position.needsUpdate = true;
     this.geo.attributes.color.needsUpdate = true;
@@ -255,14 +281,14 @@ export class Flashes {
     }
   }
 
-  add(p: THREE.Vector3, size: number): void {
+  add(p: THREE.Vector3, size: number, life = 0.05): void {
     const f = this.pool[this.next];
     this.next = (this.next + 1) % this.pool.length;
     f.sprite.position.copy(p);
     f.sprite.scale.setScalar(size);
     f.sprite.material.rotation = Math.random() * Math.PI;
     f.sprite.visible = true;
-    f.life = 0.05;
+    f.life = life;
   }
 
   update(dt: number): void {
