@@ -41,7 +41,7 @@ const http = createServer((req, res) => {
   if (route === "/healthz") {
     const players = [...rooms.values()].reduce((n, r) => n + r.players.size, 0);
     json(res, { ok: true, rooms: rooms.size, players, tickAvgMs: +(stepTotal / Math.max(stepCount, 1)).toFixed(3),
-      tickMaxMs: +stepMax.toFixed(3) });
+      tickMaxMs: +stepMax.toFixed(3), memoryMb: Math.round(process.memoryUsage().rss / 1048576) });
     stepTotal = stepCount = stepMax = 0;
     return;
   }

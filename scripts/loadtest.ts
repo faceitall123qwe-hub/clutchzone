@@ -47,6 +47,6 @@ const health = await (await fetch(url.replace("ws", "http") + "/healthz")).json(
 acks.sort((a, b) => a - b);
 const q = (p: number) => acks[Math.floor(acks.length * p)]?.toFixed(1);
 console.log(`ack latency ms: p50 ${q(0.5)}  p95 ${q(0.95)}  p99 ${q(0.99)}  max ${acks.at(-1)?.toFixed(1)}  (${acks.length} samples)`);
-console.log(`server: ${health.players} players, tick avg ${health.tickAvgMs} ms, max ${health.tickMaxMs} ms (budget 16.7 ms)`);
+console.log(`server: ${health.players} players, tick avg ${health.tickAvgMs} ms, max ${health.tickMaxMs} ms (budget 16.7 ms), memory ${health.memoryMb} MB`);
 for (const ws of sockets) ws.terminate();
 setTimeout(() => process.exit(0), 200);

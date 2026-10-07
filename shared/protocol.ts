@@ -26,15 +26,28 @@ export type GameEvent =
   | { type: "join"; id: number; name: string }
   | { type: "leave"; id: number; name: string };
 
+// Snapshots dominate bandwidth (and Fly bills outbound traffic), so other players travel as compact
+// tuples and the slowly changing roster (names, score, ping) only when it changes.
+export type PlayerTuple = [id: number, x: number, y: number, z: number, yaw: number, pitch: number, flags: number, hp: number];
+export type RosterEntry = [id: number, name: string, kills: number, deaths: number, ping: number];
+export const ALIVE = 1, CROUCHED = 2;
+
+export type You = { lastSeq: number; sim: Sim; hp: number; alive: boolean; respawnIn: number; killedBy: number | null };
+
 // server → client
 export type ServerMsg =
   | { type: "welcome"; id: number; tick: number; room: string }
   | { type: "full" }
   | { type: "pong"; t: number }
-  | {
-      type: "snap";
-      tick: number;
-      you: { lastSeq: number; sim: Sim; hp: number; alive: boolean; respawnIn: number; killedBy: number | null };
-      players: RemotePlayer[];
-      events: GameEvent[];
-    };
+  | { type: "snap"; tick: number; you: You; p: PlayerTuple[]; r?: RosterEntry[]; events: GameEvent[] };
+
+/** Snapshot as the game uses it, after Net has decoded the wire format. */
+export type Snapshot = { tick: number; you: You; players: RemotePlayer[]; events: GameEvent[] };
+
+export function decodePlayers(p: PlayerTuple[], roster: Map<number, RosterEntry>): RemotePlayer[] {
+  return p.map(([id, x, y, z, yaw, pitch, flags, hp]) => {
+    const r = roster.get(id);
+    return { id, x, y, z, yaw, pitch, hp, alive: (flags & ALIVE) !== 0, crouched: (flags & CROUCHED) !== 0,
+      name: r?.[1] ?? "…", kills: r?.[2] ?? 0, deaths: r?.[3] ?? 0, ping: r?.[4] ?? 0 };
+  });
+}

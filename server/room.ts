@@ -213,23 +213,32 @@ export class Room {
     if (this.tick % P.SNAPSHOT_EVERY === 0) this.broadcast();
   }
 
+  private lastRoster = "";
+
   private broadcast(): void {
     // Other players are only drawn, so millimetres are plenty; your own state ("you") stays exact,
     // because prediction replays from it and must match the server bit for bit.
     const r = (v: number, k = 1000) => Math.round(v * k) / k;
-    const players: P.RemotePlayer[] = [...this.players.values()].map((p) => ({
-      id: p.id, name: p.name, x: r(p.sim.move.pos.x), y: r(p.sim.move.pos.y), z: r(p.sim.move.pos.z),
-      yaw: r(p.yaw, 1e4), pitch: r(p.pitch, 1e4), crouched: p.sim.move.crouched, alive: p.alive, hp: p.hp,
-      kills: p.kills, deaths: p.deaths, ping: p.ping,
-    }));
-    const events = this.events;
+    const p: P.PlayerTuple[] = [...this.players.values()].map((pl) => [
+      pl.id, r(pl.sim.move.pos.x), r(pl.sim.move.pos.y), r(pl.sim.move.pos.z), r(pl.yaw, 1e4), r(pl.pitch, 1e4),
+      (pl.alive ? P.ALIVE : 0) | (pl.sim.move.crouched ? P.CROUCHED : 0), pl.hp,
+    ]);
+    const roster = JSON.stringify([...this.players.values()].map((pl): P.RosterEntry =>
+      [pl.id, pl.name, pl.kills, pl.deaths, pl.ping]));
+    // Names and scores change rarely: send them when they do, and once a second for anyone who missed it.
+    const withRoster = roster !== this.lastRoster || this.tick % 60 === 0;
+    this.lastRoster = roster;
+    const events = this.events.map((e) => e.type === "shot"
+      ? { ...e, o: { x: r(e.o.x), y: r(e.o.y), z: r(e.o.z) }, end: { x: r(e.end.x), y: r(e.end.y), z: r(e.end.z) } }
+      : e);
     this.events = [];
     // The part everyone gets is serialised once per room, not once per player.
-    const head = `{"type":"snap","tick":${this.tick},"players":${JSON.stringify(players)},"events":${JSON.stringify(events)},"you":`;
-    for (const p of this.players.values()) {
-      const you: Extract<P.ServerMsg, { type: "snap" }>["you"] = { lastSeq: p.lastSeq, sim: p.sim, hp: p.hp,
-        alive: p.alive, respawnIn: p.respawnIn, killedBy: p.killedBy };
-      p.send(`${head}${JSON.stringify(you)}}`);
+    const head = `{"type":"snap","tick":${this.tick},"p":${JSON.stringify(p)},${withRoster ? `"r":${roster},` : ""}"events":${JSON.stringify(events)},"you":`;
+    for (const pl of this.players.values()) {
+      const you: P.You = { lastSeq: pl.lastSeq, sim: pl.sim, hp: pl.hp, alive: pl.alive, respawnIn: pl.respawnIn,
+        killedBy: pl.killedBy };
+      pl.send(`${head}${JSON.stringify(you)}}`);
     }
   }
+
 }

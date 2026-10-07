@@ -1,7 +1,8 @@
 import { TICK } from "../shared/constants.ts";
-import { INTERP_TICKS, type ClientMsg, type RemotePlayer, type ServerMsg } from "../shared/protocol.ts";
+import {
+  decodePlayers, INTERP_TICKS, type ClientMsg, type RemotePlayer, type RosterEntry, type ServerMsg, type Snapshot,
+} from "../shared/protocol.ts";
 
-type Snap = Extract<ServerMsg, { type: "snap" }>;
 const TICK_MS = TICK * 1000;
 
 export class Net {
@@ -11,7 +12,8 @@ export class Net {
   private readonly ws: WebSocket;
   private readonly buffer: { tick: number; players: Map<number, RemotePlayer> }[] = [];
   private offset: number | null = null; // server tick ≈ now / TICK_MS + offset
-  onSnap: (s: Snap) => void = () => {};
+  onSnap: (s: Snapshot) => void = () => {};
+  private readonly roster = new Map<number, RosterEntry>();
   onClose: (reason: string) => void = () => {};
   /** Resolves with our player id once the server has accepted us. */
   readonly ready: Promise<number>;
@@ -50,9 +52,14 @@ export class Net {
       this.offset = this.offset === null || Math.abs(sample - this.offset) > 30
         ? sample
         : this.offset + (sample - this.offset) * 0.05;
-      this.buffer.push({ tick: m.tick, players: new Map(m.players.map((p) => [p.id, p])) });
+      if (m.r) {
+        this.roster.clear();
+        for (const e of m.r) this.roster.set(e[0], e);
+      }
+      const players = decodePlayers(m.p, this.roster);
+      this.buffer.push({ tick: m.tick, players: new Map(players.map((p) => [p.id, p])) });
       while (this.buffer.length > 40) this.buffer.shift();
-      this.onSnap(m);
+      this.onSnap({ tick: m.tick, you: m.you, players, events: m.events });
     }
   }
 

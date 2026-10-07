@@ -15,13 +15,13 @@
     "share": "npm run build && node scripts/share.ts"
   },
   "dependencies": {
-    "three": "^0.186.1",
     "ws": "^8.22.0"
   },
   "devDependencies": {
     "@types/node": "^26.6.4",
     "@types/three": "^0.186.0",
     "@types/ws": "^8.18.2",
+    "three": "^0.186.1",
     "typescript": "^7.0.2",
     "vite": "^8.3.3"
   }

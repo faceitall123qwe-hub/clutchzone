@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { TICK } from "../shared/constants.ts";
 import { MAP } from "../shared/map.ts";
-import type { ServerMsg } from "../shared/protocol.ts";
+import { decodePlayers, type RosterEntry, type ServerMsg } from "../shared/protocol.ts";
 import { cloneSim, shotSeed, simulate, type Cmd } from "../shared/sim.ts";
 import { Room, sanitize, type Player } from "./room.ts";
 
@@ -117,6 +117,22 @@ test("a client that froze for 200 ms catches up within one tick", () => {
   room.step();
   assert.equal(a.queue.length, 0);
   assert.ok(a.sim.move.pos.z < 10, "all of them ran");
+});
+
+test("snapshots carry the roster only when it changes, and decode back to named players", () => {
+  const { room, inbox, join } = setup();
+  const a = join("alice");
+  room.step(); room.step();
+  const b = join("bob");
+  for (let i = 0; i < 10; i++) room.step();
+  const snaps = inbox.get(b.id)!.filter((m): m is Extract<ServerMsg, { type: "snap" }> => m.type === "snap");
+  assert.ok(snaps[0].r, "a new player gets names in the first snapshot");
+  assert.ok(snaps.slice(1).every((s) => !s.r), "unchanged roster isn't resent every snapshot");
+  const roster = new Map<number, RosterEntry>(snaps[0].r!.map((e) => [e[0], e]));
+  const players = decodePlayers(snaps.at(-1)!.p, roster);
+  assert.deepEqual(players.map((p) => p.name).sort(), ["alice", "bob"]);
+  assert.ok(players.every((p) => p.alive && p.hp === 100));
+  assert.ok(a.id !== b.id);
 });
 
 test("garbage commands are rejected or clamped", () => {

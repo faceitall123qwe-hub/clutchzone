@@ -1,22 +1,31 @@
-# Fly.io: one machine in Frankfurt (Warsaw "waw" is being retired by Fly; fra is ~20-30 ms from Poland). Rooms live in that process's memory, so the game must run on
-# exactly one machine: deploy with `fly deploy --ha=false` and never scale above 1.
-app = "CHANGE-ME"
+# Fly.io, tuned for cost. Rooms live in this one process's memory, so the game runs on exactly one
+# machine: deploy with `fly deploy --ha=false` and never scale above 1.
+# Frankfurt: Fly is retiring Warsaw ("waw"); fra is ~20-30 ms from Poland.
+app = "clutchzone"
 primary_region = "fra"
 
 [http_service]
   internal_port = 8080
   force_https = true
-  auto_stop_machines = "off" # a sleeping server would drop everyone mid-match
+  # Suspend when nobody is connected (open WebSockets count as connections): an idle game costs
+  # about $0.50/month instead of $1.94, and the first visitor wakes it in ~100 ms.
+  auto_stop_machines = "suspend"
   auto_start_machines = true
-  min_machines_running = 1
+  min_machines_running = 0
+
+  [http_service.concurrency]
+    type = "connections"
+    soft_limit = 150
+    hard_limit = 200 # 100 players measured at ~15% of a laptop core; protect the shared CPU
 
   [[http_service.checks]]
     method = "GET"
     path = "/healthz"
-    interval = "15s"
+    interval = "30s"
     timeout = "5s"
     grace_period = "10s"
 
+# Smallest preset ($1.94/month while running): measured 131 MB RSS with 100 players.
 [[vm]]
   size = "shared-cpu-1x"
-  memory = "512mb"
+  memory = "256mb"

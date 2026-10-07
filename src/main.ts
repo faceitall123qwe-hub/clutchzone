@@ -4,7 +4,7 @@ import { viewRecoil } from "../shared/gun.ts";
 import { DAMAGE_SCALE } from "../shared/hitbox.ts";
 import { MAP, SPAWNS } from "../shared/map.ts";
 import { eyeHeight } from "../shared/movement.ts";
-import type { ServerMsg } from "../shared/protocol.ts";
+import type { Snapshot } from "../shared/protocol.ts";
 import { cloneSim, newSim, RANGE, shotSeed, simulate, traceMap, traceTargets, type Bullet, type Cmd } from "../shared/sim.ts";
 import { RIFLE, spread } from "../shared/weapons.ts";
 import { click, gunshot, hitSound, unlockAudio } from "./audio";
@@ -83,7 +83,7 @@ function ourShot(b: Bullet): void {
   gunshot();
 }
 
-function onSnap(s: Extract<ServerMsg, { type: "snap" }>): void {
+function onSnap(s: Snapshot): void {
   for (const p of s.players) names.set(p.id, p.name);
   // Reconcile: take the server's state for the last command it ran, replay the ones it hasn't yet.
   const before = { ...me.move.pos };
