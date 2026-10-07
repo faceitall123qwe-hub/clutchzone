@@ -24,6 +24,7 @@ renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.autoClear = false;
+renderer.info.autoReset = false; // count the world and the gun pass together
 document.body.append(renderer.domElement);
 
 const scene = new THREE.Scene();
@@ -44,6 +45,7 @@ const gun = new Gun(RIFLE);
 const rand = mulberry32(Date.now());
 let devFire = 0; // dev hook: ticks of forced trigger
 let devInput = false; // dev hook: read keys without pointer lock (headless browsers have none)
+let frames = 0, fps = 0, fpsSince = performance.now();
 const prev = { ...me.pos };
 let eye = eyeHeight(me);
 
@@ -119,6 +121,13 @@ startLoop(
     hud.crosshair(3 + Math.min(cone * pxPerRad, 60));
     hud.ammo(gun.ammo, gun.reserve, gun.reloading > 0 ? 1 - gun.reloading / RIFLE.reloadTime : 0);
 
+    frames++;
+    if (performance.now() - fpsSince >= 1000) {
+      fps = frames;
+      frames = 0;
+      fpsSince = performance.now();
+    }
+    renderer.info.reset();
     renderer.clear();
     renderer.render(scene, camera);
     renderer.clearDepth();
@@ -152,6 +161,8 @@ if (import.meta.env.DEV) {
         pos: me.pos, onGround: me.onGround, yaw, pitch, ammo: gun.ammo, reserve: gun.reserve,
         speed: Math.hypot(me.vel.x, me.vel.z) / MAX_SPEED,
         bots: bots.map((b) => ({ hp: b.hp, alive: b.alive })),
+        fps, crouched: me.crouched, locked: locked(),
+        drawCalls: renderer.info.render.calls, triangles: renderer.info.render.triangles,
       }),
     },
   });

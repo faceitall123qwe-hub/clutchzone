@@ -82,10 +82,18 @@ export function stepPlayer(s: PlayerState, cmd: MoveInput, dt: number, boxes: re
 
   const jumpPressed = cmd.jump && !s.jumpHeld;
   s.jumpHeld = cmd.jump;
-  if (s.onGround && jumpPressed) {
+  const jumped = s.onGround && jumpPressed;
+  if (jumped) {
     s.vel.y = C.JUMP_SPEED;
     s.onGround = false;
+    // Air strafing gains speed; without a cap chained jumps reach several times run speed.
+    const sp = Math.hypot(s.vel.x, s.vel.z), cap = C.MAX_SPEED * C.BHOP_CAP;
+    if (sp > cap) {
+      s.vel.x *= cap / sp;
+      s.vel.z *= cap / sp;
+    }
   }
+  const wasGrounded = s.onGround;
 
   if (s.onGround) {
     friction(s.vel, dt);
@@ -124,6 +132,16 @@ export function stepPlayer(s: PlayerState, cmd: MoveInput, dt: number, boxes: re
     s.vel.y = 0;
   } else {
     s.onGround = false;
+    // Walking off a step or down stairs: stick to the ground instead of flying for a few ticks
+    // (which would also mean full air inaccuracy and no jumping halfway down).
+    if (wasGrounded && !jumped) {
+      const probe = { ...s.pos };
+      if (moveAxis(probe, 1, -C.STEP_HEIGHT, R, h, boxes)) {
+        s.pos.y = probe.y;
+        s.onGround = true;
+        s.vel.y = 0;
+      }
+    }
   }
 }
 

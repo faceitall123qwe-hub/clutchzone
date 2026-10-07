@@ -1,13 +1,20 @@
 const held = new Set<string>();
+// Keys pressed since the last tick. A tap shorter than one 16 ms tick would otherwise be missed.
+const pressed = new Set<string>();
 let mouseDX = 0, mouseDY = 0;
 
 addEventListener("keydown", (e) => {
+  if (!e.repeat) pressed.add(e.code);
   held.add(e.code);
   if (e.code === "Space" || e.code === "Tab") e.preventDefault();
 });
 addEventListener("keyup", (e) => held.delete(e.code));
 addEventListener("blur", () => held.clear());
-addEventListener("mousedown", (e) => { if (locked()) held.add(`Mouse${e.button}`); });
+addEventListener("mousedown", (e) => {
+  if (!locked()) return;
+  held.add(`Mouse${e.button}`);
+  pressed.add(`Mouse${e.button}`);
+});
 addEventListener("mouseup", (e) => held.delete(`Mouse${e.button}`));
 addEventListener("mousemove", (e) => {
   if (!locked()) return;
@@ -26,15 +33,19 @@ export function takeMouse(): [number, number] {
   return d;
 }
 
+/** Input for one tick; call once per tick (it consumes the pressed-since-last-tick set). */
 export function axes() {
-  return {
-    forward: (isDown("KeyW") ? 1 : 0) - (isDown("KeyS") ? 1 : 0),
-    right: (isDown("KeyD") ? 1 : 0) - (isDown("KeyA") ? 1 : 0),
-    jump: isDown("Space"),
+  const down = (code: string) => held.has(code) || pressed.has(code);
+  const a = {
+    forward: (down("KeyW") ? 1 : 0) - (down("KeyS") ? 1 : 0),
+    right: (down("KeyD") ? 1 : 0) - (down("KeyA") ? 1 : 0),
+    jump: down("Space"),
     // Not Ctrl: Ctrl+W (crouch + forward) closes the tab and a page can't block it outside fullscreen.
-    crouch: isDown("KeyC"),
-    walk: isDown("ShiftLeft"),
-    fire: isDown("Mouse0"),
-    reload: isDown("KeyR"),
+    crouch: down("KeyC"),
+    walk: down("ShiftLeft"),
+    fire: down("Mouse0"),
+    reload: down("KeyR"),
   };
+  pressed.clear();
+  return a;
 }

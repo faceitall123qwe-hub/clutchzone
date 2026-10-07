@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { MAP, type Kind } from "../shared/map.ts";
 
 const COLORS: Record<Kind, number> = {
@@ -51,11 +52,18 @@ export function buildWorld(scene: THREE.Scene): void {
   for (const [kind, color] of Object.entries(COLORS) as [Kind, number][])
     materials.set(kind, new THREE.MeshStandardMaterial({ color, map: grid, roughness: 0.9 }));
 
+  // One mesh per material: the static map costs a handful of draw calls however many boxes it has.
+  const byKind = new Map<Kind, THREE.BufferGeometry[]>();
   for (const b of MAP) {
     const sx = b.max[0] - b.min[0], sy = b.max[1] - b.min[1], sz = b.max[2] - b.min[2];
-    const mesh = new THREE.Mesh(boxGeometry(sx, sy, sz), materials.get(b.kind));
-    mesh.position.set((b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2, (b.min[2] + b.max[2]) / 2);
-    mesh.castShadow = b.kind !== "floor";
+    const g = boxGeometry(sx, sy, sz);
+    g.translate((b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2, (b.min[2] + b.max[2]) / 2);
+    byKind.set(b.kind, [...(byKind.get(b.kind) ?? []), g]);
+  }
+  for (const [kind, geos] of byKind) {
+    const mesh = new THREE.Mesh(mergeGeometries(geos), materials.get(kind));
+    for (const g of geos) g.dispose();
+    mesh.castShadow = kind !== "floor";
     mesh.receiveShadow = true;
     scene.add(mesh);
   }

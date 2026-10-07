@@ -26,6 +26,7 @@ export const MAP: MapBox[] = [
   box("block", 5, 0, -8, 14, 5, 8),
   box("wall", -5, 0, -8, -1.2, 4, -7),
   box("wall", 1.2, 0, -8, 5, 4, -7),
+  box("wall", -4, 0, -16, 4, 3, -15), // blocks the spawn-to-spawn sightline through the doors
   // mid
   box("crate", -1, 0, 2, 1, 1, 4),
   box("crate", 1.5, 0, 10, 3, 2, 11.5),

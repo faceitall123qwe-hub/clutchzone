@@ -1,31 +1,33 @@
 import * as THREE from "three";
 
-const MAX_DECALS = 120;
+const MAX_DECALS = 160;
 
-/** Bullet holes: a fixed pool of small quads, oldest reused first. */
+/** Bullet holes: one instanced mesh (a single draw call), oldest hole reused first. */
 export class Decals {
-  private readonly pool: THREE.Mesh[] = [];
+  private readonly mesh: THREE.InstancedMesh;
   private next = 0;
+  private readonly dummy = new THREE.Object3D();
+  private readonly target = new THREE.Vector3();
 
   constructor(scene: THREE.Scene) {
-    const geo = new THREE.PlaneGeometry(0.07, 0.07);
     const mat = new THREE.MeshBasicMaterial({ color: 0x1a1612, transparent: true, opacity: 0.85,
       polygonOffset: true, polygonOffsetFactor: -4 });
-    for (let i = 0; i < MAX_DECALS; i++) {
-      const m = new THREE.Mesh(geo, mat);
-      m.visible = false;
-      scene.add(m);
-      this.pool.push(m);
-    }
+    this.mesh = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.07, 0.07), mat, MAX_DECALS);
+    this.mesh.count = 0;
+    this.mesh.frustumCulled = false; // instances are spread over the whole map
+    scene.add(this.mesh);
   }
 
   add(point: THREE.Vector3, normal: THREE.Vector3): void {
-    const m = this.pool[this.next];
+    const d = this.dummy;
+    d.position.copy(point).addScaledVector(normal, 0.002);
+    d.lookAt(this.target.copy(point).add(normal));
+    d.rotateZ(Math.random() * Math.PI);
+    d.updateMatrix();
+    this.mesh.setMatrixAt(this.next, d.matrix);
     this.next = (this.next + 1) % MAX_DECALS;
-    m.position.copy(point).addScaledVector(normal, 0.002);
-    m.lookAt(point.clone().add(normal));
-    m.rotateZ(Math.random() * Math.PI);
-    m.visible = true;
+    this.mesh.count = Math.max(this.mesh.count, this.next === 0 ? MAX_DECALS : this.next);
+    this.mesh.instanceMatrix.needsUpdate = true;
   }
 }
 

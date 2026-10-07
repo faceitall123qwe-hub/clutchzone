@@ -111,3 +111,53 @@ test("the A stairs lead onto the 1.5 m platform", () => {
   run(s, { forward: 1 }, 1, MAP);
   assert.equal(s.pos.y, 1.5, `y ${s.pos.y}`);
 });
+
+test("walking down the A stairs keeps the player grounded", () => {
+  const s = newPlayer(18, 1.5, -18);
+  run(s, {}, 0.2, MAP);
+  let air = 0;
+  for (let i = 0; i < 60 && s.pos.z < -13.5; i++) {
+    stepPlayer(s, { ...idle, forward: -1 }, C.TICK, MAP);
+    if (!s.onGround) air++;
+  }
+  assert.equal(air, 0);
+  assert.equal(s.pos.y, 0);
+});
+
+test("walking off a 1 m crate is a fall, not a snap", () => {
+  const crate: Box = { min: [-2, 0, -2], max: [2, 1, 2] };
+  const s = newPlayer(0, 1, 0);
+  run(s, {}, 0.2, [FLOOR, crate]);
+  let airborne = false;
+  for (let i = 0; i < 60; i++) {
+    stepPlayer(s, { ...idle, forward: 1 }, C.TICK, [FLOOR, crate]);
+    if (!s.onGround) airborne = true;
+  }
+  assert.ok(airborne);
+  assert.equal(s.pos.y, 0);
+});
+
+test("chained strafe-jumps can't exceed the bunnyhop cap at take-off", () => {
+  const s = newPlayer();
+  run(s, {}, 0.1, [FLOOR]);
+  s.vel.x = 15; // as if air strafing had built up a lot of speed
+  s.onGround = true;
+  stepPlayer(s, { ...idle, jump: true }, C.TICK, [FLOOR]);
+  assert.ok(Math.hypot(s.vel.x, s.vel.z) <= C.MAX_SPEED * C.BHOP_CAP + 1e-9);
+});
+
+test("no sightline from any attacker spawn to any defender spawn", () => {
+  const eye = C.STAND_EYE;
+  const seen: string[] = [];
+  for (const a of SPAWNS.attackers)
+    for (const d of SPAWNS.defenders) {
+      const o = { x: a.x, y: eye, z: a.z };
+      const dir = { x: d.x - a.x, y: 0, z: d.z - a.z }; // t = 1 at the other spawn
+      const blocked = MAP.some((b) => {
+        const h = rayBox(o, dir, b, 1);
+        return h !== null && h.t < 1;
+      });
+      if (!blocked) seen.push(`(${a.x},${a.z})→(${d.x},${d.z})`);
+    }
+  assert.deepEqual(seen, []);
+});

@@ -44,8 +44,13 @@ export function recoilOffset(shot: number): [number, number] {
   return [pitch, yaw];
 }
 
+/** Below this share of run speed a rifle counts as standing still, as in CS: it's what makes
+ * counter-strafing (tapping the opposite key to stop) worth learning. */
+export const ACCURATE_SPEED = 0.34;
+
 export function spread(w: WeaponStats, speed: number, onGround: boolean, crouched: boolean, shot: number): number {
-  let s = w.baseSpread + w.moveSpread * Math.min(speed / C.MAX_SPEED, 1) ** 1.5;
+  const moving = Math.max(0, Math.min(speed / C.MAX_SPEED, 1) - ACCURATE_SPEED) / (1 - ACCURATE_SPEED);
+  let s = w.baseSpread + w.moveSpread * moving ** 1.5;
   if (!onGround) s += w.airSpread;
   if (crouched && onGround) s *= w.crouchFactor;
   return s + Math.min(shot * w.shotSpread, w.maxShotSpread);

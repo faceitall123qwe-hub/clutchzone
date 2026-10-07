@@ -41,4 +41,8 @@ Phase 1: readable blockout (flat-coloured boxes). Later: CC0 low-poly (Kenney, Q
 | 2026-10-07 | Authoritative Node.js server + WebSocket, shared movement code | Cheat resistance; client and server must agree on movement |
 | 2026-10-07 | Map = list of axis-aligned boxes, custom AABB collision (no physics engine) | Same code on server, cheap, precise enough for a blockout shooter |
 | 2026-10-07 | Crouch on C, not Ctrl | Ctrl+W (crouch + forward) closes the browser tab and can't be blocked outside fullscreen |
+| 2026-10-07 | Bunnyhop cap: speed clamped to 1.2× run speed at take-off | Uncapped air strafing reached 14.8 m/s (2.3× run) in 8 jumps; CS 1.6 caps it too |
+| 2026-10-07 | Rifle is fully accurate below 34% of run speed | As in CS; makes counter-strafing (0.07 s) worth learning |
+| 2026-10-07 | Mid wall on the defenders' side; a test forbids spawn-to-spawn sightlines | Playtest found 5 spawn pairs that could see each other through the mid doors |
+| 2026-10-07 | Ground snap when walking off steps (≤ 0.45 m) | Descending stairs made the player airborne 22 of 53 ticks: full air spread, no jumping |
 | 2026-10-07 | Units in metres, CS movement constants converted (1 Hammer unit ≈ 2.54 cm) | Familiar feel |

@@ -18,3 +18,4 @@ export const FRICTION = 5.2;
 export const STOP_SPEED = 2.54; // 100 u/s
 export const GRAVITY = 20.3; // 800 u/s²
 export const JUMP_SPEED = 6.8; // ≈ 1.15 m jump: clears a 1 m crate
+export const BHOP_CAP = 1.2; // horizontal speed is clamped to this × MAX_SPEED at take-off, as in CS 1.6
