@@ -1,15 +1,40 @@
 const held = new Set<string>();
+let mouseDX = 0, mouseDY = 0;
 
-addEventListener("keydown", (e) => held.add(e.code));
+addEventListener("keydown", (e) => {
+  held.add(e.code);
+  if (e.code === "Space" || e.code === "Tab") e.preventDefault();
+});
 addEventListener("keyup", (e) => held.delete(e.code));
 addEventListener("blur", () => held.clear());
+addEventListener("mousedown", (e) => { if (locked()) held.add(`Mouse${e.button}`); });
+addEventListener("mouseup", (e) => held.delete(`Mouse${e.button}`));
+addEventListener("mousemove", (e) => {
+  if (!locked()) return;
+  mouseDX += e.movementX;
+  mouseDY += e.movementY;
+});
+addEventListener("contextmenu", (e) => e.preventDefault());
 
+export const locked = () => document.pointerLockElement !== null;
 export const isDown = (code: string) => held.has(code);
 
-/** WASD / arrows as a vector on the ground plane: x = right, y = forward, length <= 1. */
-export function moveAxis(): { x: number; y: number } {
-  const x = (isDown("KeyD") || isDown("ArrowRight") ? 1 : 0) - (isDown("KeyA") || isDown("ArrowLeft") ? 1 : 0);
-  const y = (isDown("KeyW") || isDown("ArrowUp") ? 1 : 0) - (isDown("KeyS") || isDown("ArrowDown") ? 1 : 0);
-  const len = Math.hypot(x, y) || 1;
-  return { x: x / len, y: y / len };
+/** Mouse movement since the last call, in pixels. */
+export function takeMouse(): [number, number] {
+  const d: [number, number] = [mouseDX, mouseDY];
+  mouseDX = mouseDY = 0;
+  return d;
+}
+
+export function axes() {
+  return {
+    forward: (isDown("KeyW") ? 1 : 0) - (isDown("KeyS") ? 1 : 0),
+    right: (isDown("KeyD") ? 1 : 0) - (isDown("KeyA") ? 1 : 0),
+    jump: isDown("Space"),
+    // Not Ctrl: Ctrl+W (crouch + forward) closes the tab and a page can't block it outside fullscreen.
+    crouch: isDown("KeyC"),
+    walk: isDown("ShiftLeft"),
+    fire: isDown("Mouse0"),
+    reload: isDown("KeyR"),
+  };
 }
