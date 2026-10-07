@@ -68,7 +68,8 @@ function slide(p: Vec3, dx: number, dz: number, h: number, boxes: readonly Box[]
   return { x: moveAxis(p, 0, dx, R, h, boxes), z: moveAxis(p, 2, dz, R, h, boxes) };
 }
 
-export function stepPlayer(s: PlayerState, cmd: MoveInput, dt: number, boxes: readonly Box[]): void {
+/** speedScale: the weapon in hand (a sniper rifle is heavy, a scoped one more so). */
+export function stepPlayer(s: PlayerState, cmd: MoveInput, dt: number, boxes: readonly Box[], speedScale = 1): void {
   setCrouch(s, cmd.crouch, boxes);
 
   // wish direction from view yaw: forward = (-sin, -cos), right = (cos, -sin)
@@ -77,7 +78,7 @@ export function stepPlayer(s: PlayerState, cmd: MoveInput, dt: number, boxes: re
   let wz = -cos * cmd.forward - sin * cmd.right;
   const len = Math.hypot(wx, wz);
   if (len > 0) { wx /= len; wz /= len; }
-  const factor = s.crouched ? C.CROUCH_FACTOR : cmd.walk ? C.WALK_FACTOR : 1;
+  const factor = (s.crouched ? C.CROUCH_FACTOR : cmd.walk ? C.WALK_FACTOR : 1) * speedScale;
   const wishSpeed = len > 0 ? C.MAX_SPEED * factor : 0;
 
   const jumpPressed = cmd.jump && !s.jumpHeld;

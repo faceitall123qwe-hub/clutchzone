@@ -3,11 +3,12 @@ import { test } from "node:test";
 import { TICK } from "../shared/constants.ts";
 import { MAP } from "../shared/map.ts";
 import { decodePlayers, type RosterEntry, type ServerMsg } from "../shared/protocol.ts";
-import { cloneSim, shotSeed, simulate, type Cmd } from "../shared/sim.ts";
+import { cloneSim, gunOf, shotSeed, simulate, type Cmd } from "../shared/sim.ts";
+import { PISTOL, SNIPER, spread } from "../shared/weapons.ts";
 import { Room, sanitize, type Player } from "./room.ts";
 
 const base: Omit<Cmd, "seq"> = { forward: 0, right: 0, yaw: 0, pitch: 0, jump: false, crouch: false, walk: false,
-  fire: false, reload: false };
+  fire: false, reload: false, slot: 0, aim: false };
 
 function setup() {
   const room = new Room("t");
@@ -164,11 +165,86 @@ test("client prediction replays to exactly the server's state", () => {
   const cmds: Cmd[] = [];
   for (let i = 0; i < 120; i++)
     cmds.push({ ...base, seq: a.lastSeq + i + 1, forward: i % 40 < 30 ? 1 : 0, right: i % 25 < 10 ? 1 : -1,
-      yaw: Math.sin(i / 10), pitch: 0.1, jump: i % 50 === 0, crouch: i > 90, fire: i % 3 === 0 });
+      yaw: Math.sin(i / 10), pitch: 0.1, jump: i % 50 === 0, crouch: i > 90, fire: i % 3 === 0,
+      slot: i < 40 ? 0 : i < 80 ? 1 : 2, aim: i > 100 });
   for (const c of cmds) {
     simulate(predicted, c, shotSeed(a.id, c.seq), MAP); // what the client does locally
     room.onMessage(a, { type: "input", cmd: c, viewTick: room.tick });
     room.step();
   }
   assert.deepEqual(predicted, a.sim);
+});
+
+const chest = Math.atan2(1.0 - 1.62, 10), head = Math.atan2(1.64 - 1.62, 10);
+const wait = (room: Room, p: Player, ticks: number, cmd: Partial<Cmd> = {}) => {
+  for (let i = 0; i < ticks; i++) { input(room, p, cmd); room.step(); }
+};
+
+test("switching weapons takes the draw time before the new one fires", () => {
+  const { room, join } = setup();
+  const a = join("a"), b = join("b");
+  place(a, 0, 10);
+  place(b, 0, 0);
+  room.step();
+  input(room, a, { slot: 1, fire: true, pitch: chest });
+  room.step();
+  assert.equal(a.sim.slot, 1);
+  assert.equal(b.hp, 100, "no shot while drawing");
+  wait(room, a, Math.ceil(PISTOL.drawTime * 60), { slot: 1 });
+  input(room, a, { slot: 1, fire: true, pitch: chest });
+  room.step();
+  assert.equal(b.hp, 100 - PISTOL.damage);
+});
+
+test("the pistol fires once per click, the rifle keeps firing", () => {
+  const { room, join } = setup();
+  const a = join("a");
+  place(a, 0, 10);
+  wait(room, a, 40, { slot: 1 });
+  const before = gunOf(a.sim).ammo;
+  wait(room, a, 60, { slot: 1, fire: true }); // trigger held for a second
+  assert.equal(gunOf(a.sim).ammo, before - 1);
+  wait(room, a, 5, { slot: 1 });
+  for (let i = 0; i < 5; i++) { wait(room, a, 5, { slot: 1, fire: true }); wait(room, a, 5, { slot: 1 }); }
+  assert.equal(gunOf(a.sim).ammo, before - 6, "five more clicks, five more shots");
+  wait(room, a, 40, { slot: 0 });
+  wait(room, a, 30, { slot: 0, fire: true });
+  assert.equal(gunOf(a.sim).ammo, 30 - 5, "half a second of rifle fire");
+});
+
+test("the sniper rifle kills with one body shot and slows its holder down", () => {
+  const { room, join } = setup();
+  const a = join("a"), b = join("b"), c = join("c");
+  place(a, 0, 10);
+  place(b, 0, 0);
+  place(c, 10, 20);
+  wait(room, a, 60, { slot: 2, aim: true });
+  input(room, a, { slot: 2, aim: true, fire: true, pitch: chest });
+  room.step();
+  assert.equal(b.alive, false);
+  assert.equal(a.kills, 1);
+
+  wait(room, c, 60, { slot: 2, forward: 1 });
+  const v = Math.hypot(c.sim.move.vel.x, c.sim.move.vel.z);
+  assert.ok(Math.abs(v - 6.35 * SNIPER.speed) < 0.05, `runs at ${v.toFixed(2)} m/s`);
+  wait(room, c, 60, { slot: 2, forward: 1, aim: true });
+  const scopedV = Math.hypot(c.sim.move.vel.x, c.sim.move.vel.z);
+  assert.ok(Math.abs(scopedV - 6.35 * SNIPER.scope!.speed) < 0.05, `scoped ${scopedV.toFixed(2)} m/s`);
+});
+
+test("the scope is what makes the sniper rifle accurate", () => {
+  assert.ok(spread(SNIPER, 0, true, false, 0, true) < 0.001);
+  assert.ok(spread(SNIPER, 0, true, false, 0, false) > 0.04);
+});
+
+test("kill events name the weapon", () => {
+  const { room, inbox, join } = setup();
+  const a = join("a"), b = join("b");
+  place(a, 0, 10);
+  place(b, 0, 0);
+  wait(room, a, 40, { slot: 1 });
+  input(room, a, { slot: 1, fire: true, pitch: head });
+  room.step(); room.step();
+  const kills = inbox.get(b.id)!.flatMap((m) => m.type === "snap" ? m.events : []).filter((e) => e.type === "kill");
+  assert.deepEqual(kills.map((k) => k.type === "kill" && [k.w, k.head]), [[1, true]]);
 });

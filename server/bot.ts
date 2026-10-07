@@ -61,7 +61,7 @@ export class BotBrain {
     if (tick % 3 === 0) this.perceive(eye, yaw, enemies);
     const target = enemies.find((e) => e.id === this.target);
     const cmd: Omit<Cmd, "seq"> = { forward: 0, right: 0, yaw, pitch, jump: false, crouch: false, walk: false,
-      fire: false, reload: false };
+      fire: false, reload: false, slot: 0, aim: false };
 
     if (target) {
       this.targetFor += TICK;

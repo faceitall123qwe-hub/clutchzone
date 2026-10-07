@@ -16,32 +16,73 @@
     #xhair .l, #xhair .r { height: 2px; width: 8px; top: -1px; }
     #xhair .t { bottom: var(--gap); } #xhair .b { top: var(--gap); }
     #xhair .l { right: var(--gap); } #xhair .r { left: var(--gap); }
+    #scope { position: absolute; inset: 0; display: none; background: radial-gradient(circle at center, transparent 0 41vh, #000 41.3vh); }
+    #scope::before, #scope::after { content: ""; position: absolute; background: #000; }
+    #scope::before { left: 0; right: 0; top: 50%; height: 1px; }
+    #scope::after { top: 0; bottom: 0; left: 50%; width: 1px; }
+    #scope i { position: absolute; left: 50%; top: 50%; width: 3px; height: 3px; margin: -1px; background: #d22; border-radius: 50%; }
     #hitmark { position: absolute; left: 50%; top: 50%; width: 22px; height: 22px; margin: -11px; opacity: 0;
       background: linear-gradient(45deg, transparent 45%, #fff 45% 55%, transparent 55%),
                   linear-gradient(-45deg, transparent 45%, #fff 45% 55%, transparent 55%);
       -webkit-mask: radial-gradient(circle, transparent 5px, #000 5px); mask: radial-gradient(circle, transparent 5px, #000 5px); }
     #hitmark.on { opacity: 1; } #hitmark.head { opacity: 1; filter: sepia(1) saturate(6) hue-rotate(5deg); }
     #hitmark.kill { opacity: 1; filter: sepia(1) saturate(9) hue-rotate(-45deg); transform: scale(1.3); }
-    #health, #ammo { position: absolute; bottom: 24px; font-weight: 700; font-size: 34px; display: flex; align-items: baseline; gap: 8px; }
-    #health { left: 28px; } #health span { color: #6dff7a; }
-    #ammo { right: 28px; } #ammo span { font-size: 18px; opacity: .8; } #ammo b.low { color: #ff6b5b; }
-    #reload { position: absolute; bottom: -10px; left: 0; right: 0; height: 4px; background: #0006; display: none; }
+    #health { position: absolute; left: 28px; bottom: 26px; width: 180px; }
+    #health .row, #ammo .row { display: flex; align-items: baseline; gap: 8px; font-weight: 800; font-size: 36px; line-height: 1; }
+    #health .row span { color: #6dff7a; }
+    #health .bar { height: 5px; margin-top: 6px; background: #0007; }
+    #health .bar i { display: block; height: 100%; width: 100%; background: linear-gradient(90deg, #6dff7a, #b8ff8a); transition: width .15s; }
+    #health.low .row b, #health.low .row span { color: #ff6b5b; } #health.low .bar i { background: #ff6b5b; }
+    #ammo { position: absolute; right: 28px; bottom: 26px; text-align: right; }
+    #ammo .row { justify-content: flex-end; }
+    #ammo small { font-size: 12px; letter-spacing: .14em; text-transform: uppercase; opacity: .7; }
+    #ammo .row span { font-size: 18px; opacity: .8; } #ammo b.low { color: #ff6b5b; }
+    #reload { height: 4px; margin-top: 6px; background: #0006; display: none; }
     #reload i { display: block; height: 100%; background: #fff; }
-    #feed { position: absolute; top: 18px; right: 22px; display: grid; gap: 6px; font-size: 14px; }
-    #feed div { background: #000a; padding: 5px 10px; border-left: 3px solid #e2b23c; }
+    #slots { position: absolute; right: 28px; bottom: 112px; display: grid; gap: 4px; justify-items: end; }
+    #slots div { display: flex; align-items: center; gap: 8px; padding: 4px 8px; font-size: 12px; font-weight: 600; opacity: .38; background: #0004; }
+    #slots div.on { opacity: 1; background: #0008; box-shadow: inset -3px 0 #e2b23c; }
+    #slots svg { height: 16px; fill: #fff; filter: drop-shadow(0 1px 1px #000a); }
+    #slots kbd { font: 700 11px system-ui; color: #e2b23c; }
+    #feed { position: absolute; top: 16px; right: 18px; display: grid; gap: 4px; justify-items: end; }
+    #feed .kill { display: flex; align-items: center; gap: 8px; padding: 5px 10px; font-size: 14px;
+      background: #0b0e13b8; border: 1px solid transparent; border-radius: 3px; transition: opacity .4s; }
+    #feed .kill.mine { border-color: #e04a3a; background: #2a0f0dc8; }
+    #feed .kill svg { height: 15px; fill: #f2f2f2; filter: drop-shadow(0 1px 1px #000); }
+    #feed .hs { color: #ff5a4a; display: flex; } #feed .hs svg { height: 15px; fill: none; }
+    #feed .k { color: #f0c552; } #feed .v { color: #9cc8ff; }
+    #notices { position: absolute; left: 28px; bottom: 96px; display: grid; gap: 3px; font-size: 13px; opacity: .85; }
+    #notices div { transition: opacity .4s; }
+    #feed .out, #notices .out { opacity: 0; }
     #stats { position: absolute; top: 18px; left: 22px; font-size: 13px; opacity: .85; }
-    #start { position: fixed; inset: 0; display: grid; place-items: center; background: #0b0e13c0; color: #e9e4d8; }
-    #start .card { background: #161b22; border: 1px solid #2c3440; padding: 36px 44px; width: min(420px, 90vw); }
+    #banner { position: absolute; left: 50%; top: 64%; transform: translateX(-50%); display: none; text-align: center; }
+    #banner.pop { display: grid; gap: 4px; justify-items: center; animation: pop .25s ease-out; }
+    #banner b { font-size: 18px; letter-spacing: .2em; color: #ffd27a; }
+    #banner span { font-size: 13px; opacity: .85; }
+    #banner .skulls { display: flex; gap: 6px; }
+    #banner .skulls i { width: 22px; height: 22px; background: #ff5a4a; transform: rotate(45deg); border: 2px solid #fff; box-shadow: 0 0 8px #ff5a4a; }
+    @keyframes pop { from { transform: translateX(-50%) scale(1.6); opacity: 0; } to { transform: translateX(-50%) scale(1); opacity: 1; } }
+    #dirs i { position: absolute; left: 50%; top: 50%; width: 220px; height: 220px; margin: -110px; border-radius: 50%;
+      border-top: 6px solid #ff3b2f; filter: drop-shadow(0 0 6px #f00); animation: fade 1.2s forwards;
+      -webkit-mask: conic-gradient(from -25deg, #000 50deg, transparent 50deg); mask: conic-gradient(from -25deg, #000 50deg, transparent 50deg); }
+    @keyframes fade { to { opacity: 0; } }
+    #start { position: fixed; inset: 0; display: grid; place-items: center; background: #0b0e13c0; color: #e9e4d8; overflow-y: auto; }
+    #start .card { background: #161b22; border: 1px solid #2c3440; padding: 32px 40px; width: min(420px, 90vw); margin: 16px 0; }
     #start h1 { margin: 0; font-size: 44px; letter-spacing: .12em; color: #e2b23c; }
-    #start .sub { margin: 4px 0 26px; opacity: .7; }
+    #start .sub { margin: 4px 0 22px; opacity: .7; }
     #start button { width: 100%; padding: 16px; font: 700 18px system-ui; background: #e2b23c; color: #161b22; border: 0; cursor: pointer; }
     #start button:hover { background: #f0c552; }
-    #start dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 18px; margin: 24px 0 0; font-size: 14px; }
+    #start dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 18px; margin: 20px 0 0; font-size: 14px; }
     #start dt { opacity: .6; } #start dd { margin: 0; font-weight: 600; }
     #start .name { display: grid; gap: 6px; font-size: 13px; opacity: .9; margin-bottom: 14px; }
     #start input { font: 600 16px system-ui; padding: 10px 12px; background: #0e1116; color: #e9e4d8; border: 1px solid #2c3440; }
     #start button.ghost { margin-top: 10px; background: transparent; color: #e9e4d8; border: 1px solid #2c3440; font-size: 15px; }
     #start button.ghost:hover { background: #1f2630; }
+    #settings { margin-top: 14px; font-size: 14px; }
+    #settings summary { cursor: pointer; opacity: .8; }
+    #settings label { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; margin-top: 10px; }
+    #settings input { grid-column: 1 / -1; padding: 0; accent-color: #e2b23c; }
+    #settings output { font-weight: 700; color: #e2b23c; }
     #invite { display: none; gap: 8px; align-items: center; margin-top: 10px; font-size: 13px; }
     #invite input { flex: 1; font-size: 12px; padding: 8px; min-width: 0; }
     #invite button { width: auto; padding: 8px 12px; font-size: 13px; }
@@ -60,8 +101,6 @@
     #board th, #board td { padding: 8px 16px; text-align: left; border-bottom: 1px solid #2c3440; }
     #board th { font-size: 12px; opacity: .6; text-transform: uppercase; }
     #board tr.me td { color: #e2b23c; font-weight: 700; }
-    #feed div.mine { border-left-color: #6dff7a; }
-    #hp.low { color: #ff6b5b; }
   </style>
 </head>
 <body>

@@ -1,0 +1,231 @@
+import * as THREE from "three";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+
+/** Procedural low-poly models. Parts are coloured per vertex and merged per surface type, so a
+ * whole gun or soldier costs one or two draw calls. */
+type Surface = "metal" | "matte" | "glass";
+type V3 = [number, number, number];
+
+export class Kit {
+  readonly parts: { geo: THREE.BufferGeometry; surface: Surface }[] = [];
+  private readonly m = new THREE.Matrix4();
+  private readonly q = new THREE.Quaternion();
+  private readonly e = new THREE.Euler();
+  private readonly dummy = new THREE.Object3D();
+
+  private add(geo: THREE.BufferGeometry, color: number, surface: Surface): void {
+    const c = new THREE.Color(color);
+    const n = geo.getAttribute("position").count;
+    const colors = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) colors.set([c.r, c.g, c.b], i * 3);
+    geo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+    if (geo.index) geo = geo.toNonIndexed();
+    this.parts.push({ geo, surface });
+  }
+
+  box(color: number, size: V3, pos: V3, rot: V3 = [0, 0, 0], surface: Surface = "matte"): this {
+    const g = new THREE.BoxGeometry(...size);
+    g.applyMatrix4(this.m.compose(new THREE.Vector3(...pos), this.q.setFromEuler(this.e.set(...rot)), new THREE.Vector3(1, 1, 1)));
+    this.add(g, color, surface);
+    return this;
+  }
+
+  /** Cylinder along Z (a barrel) unless rot says otherwise. */
+  cyl(color: number, r: number, len: number, pos: V3, rot: V3 = [Math.PI / 2, 0, 0], surface: Surface = "metal", sides = 10): this {
+    const g = new THREE.CylinderGeometry(r, r, len, sides);
+    g.applyMatrix4(this.m.compose(new THREE.Vector3(...pos), this.q.setFromEuler(this.e.set(...rot)), new THREE.Vector3(1, 1, 1)));
+    this.add(g, color, surface);
+    return this;
+  }
+
+  /** A box stretched from a to b (limbs). */
+  beam(color: number, w: number, h: number, a: V3, b: V3, surface: Surface = "matte"): this {
+    const from = new THREE.Vector3(...a), to = new THREE.Vector3(...b);
+    const g = new THREE.BoxGeometry(w, h, from.distanceTo(to));
+    this.dummy.position.copy(from).add(to).multiplyScalar(0.5);
+    this.dummy.lookAt(to);
+    this.dummy.updateMatrix();
+    g.applyMatrix4(this.dummy.matrix);
+    this.add(g, color, surface);
+    return this;
+  }
+
+  /** A round limb from a to b. */
+  limb(color: number, r: number, a: V3, b: V3, surface: Surface = "matte"): this {
+    const from = new THREE.Vector3(...a), to = new THREE.Vector3(...b);
+    const g = new THREE.CylinderGeometry(r, r * 1.1, from.distanceTo(to), 8);
+    g.rotateX(Math.PI / 2);
+    this.dummy.position.copy(from).add(to).multiplyScalar(0.5);
+    this.dummy.lookAt(to);
+    this.dummy.updateMatrix();
+    g.applyMatrix4(this.dummy.matrix);
+    this.add(g, color, surface);
+    return this;
+  }
+
+  sphere(color: number, r: number, pos: V3, surface: Surface = "metal"): this {
+    const g = new THREE.SphereGeometry(r, 8, 6);
+    g.translate(...pos);
+    this.add(g, color, surface);
+    return this;
+  }
+
+  /** One mesh per surface type. */
+  build(materials: Record<Surface, THREE.Material>): THREE.Group {
+    const group = new THREE.Group();
+    for (const surface of ["metal", "matte", "glass"] as Surface[]) {
+      const geos = this.parts.filter((p) => p.surface === surface).map((p) => p.geo);
+      if (!geos.length) continue;
+      const mesh = new THREE.Mesh(mergeGeometries(geos), materials[surface]);
+      mesh.castShadow = true;
+      group.add(mesh);
+    }
+    for (const p of this.parts) p.geo.dispose();
+    return group;
+  }
+
+  /** Everything in one mesh with one material (third-person models). */
+  buildSingle(material: THREE.Material): THREE.Mesh {
+    const mesh = new THREE.Mesh(mergeGeometries(this.parts.map((p) => p.geo)), material);
+    for (const p of this.parts) p.geo.dispose();
+    mesh.castShadow = true;
+    return mesh;
+  }
+}
+
+export const viewMaterials = (): Record<Surface, THREE.Material> => ({
+  metal: new THREE.MeshStandardMaterial({ vertexColors: true, metalness: 0.55, roughness: 0.42 }),
+  matte: new THREE.MeshStandardMaterial({ vertexColors: true, metalness: 0, roughness: 0.75 }),
+  glass: new THREE.MeshStandardMaterial({ vertexColors: true, metalness: 0.2, roughness: 0.05, emissive: 0x112233 }),
+});
+
+const GUNMETAL = 0x454a52, DARK = 0x2a2d32, WOOD = 0x8a5530, OLIVE = 0x5f6a44;
+
+/** Where the hands hold a gun, relative to its origin (the middle of the receiver). */
+export type GunSpec = { muzzle: THREE.Vector3; rightHand: V3; leftHand: V3 };
+
+export function gunKit(id: number, k = new Kit()): GunSpec {
+  if (id === 1) {
+    // P-9 pistol
+    k.box(0x3a3d42, [0.032, 0.04, 0.2], [0, 0, 0], undefined, "metal"); // slide
+    for (let i = 0; i < 4; i++) k.box(0x24262a, [0.034, 0.028, 0.004], [0, 0.002, 0.055 + i * 0.011]);
+    k.cyl(DARK, 0.008, 0.02, [0, 0.002, -0.105]);
+    k.box(DARK, [0.03, 0.03, 0.17], [0, -0.033, -0.01]); // frame
+    k.box(DARK, [0.03, 0.12, 0.05], [0, -0.1, 0.065], [-0.25, 0, 0]); // grip
+    k.box(DARK, [0.008, 0.008, 0.05], [0, -0.066, 0.0]);
+    k.box(DARK, [0.008, 0.03, 0.008], [0, -0.055, -0.026]);
+    k.box(DARK, [0.025, 0.012, 0.01], [0, 0.026, 0.09]);
+    k.box(0xd8d8d0, [0.006, 0.01, 0.008], [0, 0.025, -0.09]);
+    k.box(GUNMETAL, [0.032, 0.012, 0.055], [0, -0.16, 0.08], [-0.25, 0, 0], "metal");
+    return { muzzle: new THREE.Vector3(0, 0.002, -0.118), rightHand: [0, -0.1, 0.065], leftHand: [-0.02, -0.12, 0.055] };
+  }
+  if (id === 2) {
+    // Longbow bolt-action sniper rifle
+    k.cyl(GUNMETAL, 0.022, 0.24, [0, 0, 0]); // receiver
+    k.cyl(GUNMETAL, 0.011, 0.62, [0, 0, -0.43], undefined, "metal", 8); // barrel
+    k.box(DARK, [0.036, 0.03, 0.07], [0, 0, -0.77], undefined, "metal"); // muzzle brake
+    k.box(OLIVE, [0.06, 0.055, 0.34], [0, -0.035, -0.28]); // forend
+    k.box(OLIVE, [0.056, 0.07, 0.2], [0, -0.04, 0]);
+    k.box(OLIVE, [0.05, 0.1, 0.3], [0, -0.045, 0.3]); // stock
+    k.box(OLIVE, [0.04, 0.03, 0.16], [0, 0.02, 0.32]); // cheek rest
+    k.box(DARK, [0.052, 0.13, 0.025], [0, -0.05, 0.46]); // butt pad
+    k.box(OLIVE, [0.035, 0.1, 0.045], [0, -0.11, 0.13], [-0.3, 0, 0]); // grip
+    k.box(DARK, [0.04, 0.07, 0.08], [0, -0.1, -0.02], undefined, "metal"); // magazine
+    k.cyl(GUNMETAL, 0.005, 0.06, [0.045, 0, 0.07], [0, 0, Math.PI / 2]); // bolt handle
+    k.sphere(DARK, 0.012, [0.077, -0.004, 0.07]);
+    k.cyl(DARK, 0.019, 0.3, [0, 0.075, 0], undefined, "metal", 12); // scope tube
+    k.cyl(DARK, 0.028, 0.07, [0, 0.075, -0.17], undefined, "metal", 12);
+    k.cyl(DARK, 0.024, 0.05, [0, 0.075, 0.16], undefined, "metal", 12);
+    k.cyl(DARK, 0.012, 0.03, [0, 0.1, 0], [0, 0, 0]); // turret
+    k.cyl(DARK, 0.012, 0.03, [0.025, 0.075, 0], [0, 0, Math.PI / 2]);
+    k.box(DARK, [0.03, 0.05, 0.02], [0, 0.045, -0.08], undefined, "metal");
+    k.box(DARK, [0.03, 0.05, 0.02], [0, 0.045, 0.08], undefined, "metal");
+    k.cyl(0x3a6a8a, 0.024, 0.003, [0, 0.075, -0.206], undefined, "glass", 12);
+    return { muzzle: new THREE.Vector3(0, 0, -0.81), rightHand: [0, -0.11, 0.13], leftHand: [0, -0.07, -0.3] };
+  }
+  // AR-7 assault rifle
+  k.box(GUNMETAL, [0.06, 0.08, 0.4], [0, 0, 0], undefined, "metal"); // receiver
+  k.cyl(GUNMETAL, 0.03, 0.36, [0, 0.035, 0.01], undefined, "metal", 12); // dust cover
+  k.box(DARK, [0.03, 0.025, 0.05], [0, 0.07, -0.14], undefined, "metal"); // rear sight
+  k.box(WOOD, [0.066, 0.06, 0.2], [0, -0.005, -0.31]); // handguard
+  k.box(WOOD, [0.05, 0.036, 0.18], [0, 0.045, -0.3]);
+  k.cyl(GUNMETAL, 0.012, 0.34, [0, 0.01, -0.56], undefined, "metal", 8); // barrel
+  k.cyl(GUNMETAL, 0.018, 0.04, [0, 0.01, -0.66]);
+  k.box(DARK, [0.012, 0.06, 0.015], [0, 0.045, -0.66], undefined, "metal"); // front sight
+  k.cyl(DARK, 0.017, 0.07, [0, 0.01, -0.75]); // muzzle brake
+  k.box(DARK, [0.045, 0.08, 0.075], [0, -0.08, -0.07], [0.1, 0, 0], "metal"); // curved magazine
+  k.box(DARK, [0.045, 0.08, 0.075], [0, -0.15, -0.095], [0.3, 0, 0], "metal");
+  k.box(DARK, [0.045, 0.08, 0.075], [0, -0.215, -0.14], [0.5, 0, 0], "metal");
+  k.box(DARK, [0.01, 0.01, 0.07], [0, -0.075, 0.04], undefined, "metal"); // trigger guard
+  k.box(WOOD, [0.04, 0.11, 0.05], [0, -0.085, 0.1], [-0.3, 0, 0]); // grip
+  k.box(WOOD, [0.046, 0.075, 0.26], [0, -0.03, 0.33], [0.08, 0, 0]); // stock
+  k.box(DARK, [0.05, 0.12, 0.02], [0, -0.05, 0.46], undefined, "metal");
+  return { muzzle: new THREE.Vector3(0, 0.01, -0.79), rightHand: [0, -0.1, 0.1], leftHand: [0, -0.04, -0.32] };
+}
+
+const GLOVE = 0x34322e, SLEEVE = 0x6f6248;
+
+/** First-person hands and forearms reaching the gun from outside the screen. */
+export function handsKit(spec: GunSpec, k: Kit): void {
+  const [rx, ry, rz] = spec.rightHand, [lx, ly, lz] = spec.leftHand;
+  k.box(GLOVE, [0.07, 0.085, 0.09], [rx + 0.02, ry - 0.01, rz + 0.005]);
+  k.limb(GLOVE, 0.036, [rx + 0.03, ry - 0.03, rz + 0.04], [rx + 0.06, ry - 0.07, rz + 0.1]);
+  k.limb(SLEEVE, 0.045, [rx + 0.06, ry - 0.07, rz + 0.1], [rx + 0.17, ry - 0.24, rz + 0.42]);
+  k.box(GLOVE, [0.075, 0.06, 0.1], [lx - 0.015, ly - 0.035, lz]);
+  k.limb(GLOVE, 0.036, [lx - 0.03, ly - 0.06, lz + 0.03], [lx - 0.06, ly - 0.1, lz + 0.08]);
+  k.limb(SLEEVE, 0.045, [lx - 0.06, ly - 0.1, lz + 0.08], [lx - 0.2, ly - 0.32, lz + 0.35]);
+}
+
+export type Outfit = { uniform: number; vest: number; pants: number; helmet: number; skin: number };
+export const OUTFITS: Outfit[] = [
+  { uniform: 0xa08a64, vest: 0x5d5340, pants: 0x7d6b4f, helmet: 0x6b5f45, skin: 0xd9a77e },
+  { uniform: 0x5a6878, vest: 0x2f3742, pants: 0x48525e, helmet: 0x3a434e, skin: 0xb98a63 },
+];
+
+/** Shooting-range targets: hard to miss. */
+export const TARGET_OUTFIT: Outfit = { uniform: 0xb8433a, vest: 0x7a2a24, pants: 0x3d4652, helmet: 0x8f2f28, skin: 0xd9a77e };
+
+/** Soldier without legs, fitted to the hitboxes (feet at 0, facing -Z). h: standing or crouched height.
+ * Returns the shoulder height, where the arms and gun pivot with the view pitch. */
+export function torsoKit(o: Outfit, h: number, k: Kit): number {
+  const legsTop = h * 0.45, headBottom = h - 0.28;
+  k.box(o.pants, [0.42, 0.16, 0.24], [0, legsTop + 0.06, 0]);
+  const chest = headBottom - legsTop - 0.12;
+  k.box(o.uniform, [0.46, chest, 0.26], [0, legsTop + 0.12 + chest / 2, 0]);
+  k.box(o.vest, [0.5, chest * 0.7, 0.3], [0, legsTop + 0.14 + chest * 0.4, 0]);
+  k.box(o.vest, [0.12, 0.08, 0.04], [-0.12, legsTop + 0.12 + chest * 0.3, -0.16]); // pouches
+  k.box(o.vest, [0.12, 0.08, 0.04], [0.12, legsTop + 0.12 + chest * 0.3, -0.16]);
+  k.box(o.skin, [0.1, 0.06, 0.1], [0, headBottom + 0.01, 0]); // neck
+  k.box(o.skin, [0.21, 0.22, 0.22], [0, headBottom + 0.13, 0]); // head
+  k.box(0x1d1d1d, [0.17, 0.04, 0.02], [0, headBottom + 0.16, -0.112]); // goggles band
+  k.box(o.helmet, [0.25, 0.09, 0.26], [0, headBottom + 0.24, 0.005]);
+  k.box(o.helmet, [0.27, 0.03, 0.29], [0, headBottom + 0.2, 0.01]);
+  return headBottom - 0.06;
+}
+
+/** Arms and gun, around the shoulder pivot (pitch rotates them together). */
+export function armsKit(o: Outfit, gun: number, k: Kit): GunSpec {
+  const before = k.parts.length;
+  const spec = gunKit(gun, k);
+  const g = new THREE.Vector3(0.12, -0.08, -0.32); // gun origin relative to the shoulders
+  for (const p of k.parts.slice(before)) p.geo.translate(g.x, g.y, g.z);
+  const [rx, ry, rz] = spec.rightHand, [lx, ly, lz] = spec.leftHand;
+  k.beam(o.uniform, 0.1, 0.1, [0.24, 0, 0.02], [g.x + rx + 0.06, g.y + ry - 0.02, g.z + rz + 0.08]);
+  k.box(GLOVE, [0.07, 0.09, 0.09], [g.x + rx + 0.02, g.y + ry, g.z + rz]);
+  k.beam(o.uniform, 0.1, 0.1, [-0.24, 0, 0.02], [g.x + lx - 0.04, g.y + ly - 0.05, g.z + lz + 0.05]);
+  k.box(GLOVE, [0.07, 0.07, 0.1], [g.x + lx - 0.01, g.y + ly - 0.03, g.z + lz]);
+  return { ...spec, muzzle: spec.muzzle.clone().add(g) };
+}
+
+/** One leg hanging from the hip at the origin. Crouched legs kneel: thigh forward, shin down. */
+export function legKit(o: Outfit, h: number, crouched: boolean, k: Kit): void {
+  const legsTop = h * 0.45;
+  if (crouched) {
+    k.box(o.pants, [0.17, 0.17, 0.4], [0, 0, -0.14]);
+    k.box(o.pants, [0.16, legsTop - 0.08, 0.17], [0, -(legsTop - 0.08) / 2, -0.3]);
+    k.box(0x2b2722, [0.17, 0.1, 0.26], [0, -legsTop + 0.05, -0.33]);
+    return;
+  }
+  k.box(o.pants, [0.17, legsTop - 0.1, 0.19], [0, -(legsTop - 0.1) / 2, 0]);
+  k.box(0x2b2722, [0.18, 0.12, 0.27], [0, -legsTop + 0.06, -0.03]);
+}

@@ -1,64 +1,130 @@
 import * as THREE from "three";
-import { hitboxes } from "../shared/hitbox.ts";
+import { CROUCH_HEIGHT, STAND_HEIGHT } from "../shared/constants.ts";
 import type { RemotePlayer } from "../shared/protocol.ts";
+import { WEAPONS } from "../shared/weapons.ts";
+import { armsKit, Kit, legKit, OUTFITS, torsoKit, type Outfit } from "./models";
 
-/** A body built from the hitboxes, so what you see is exactly what you can hit. */
-function body(crouched: boolean, color: THREE.Color): THREE.Group {
-  const g = new THREE.Group();
-  const mats = [
-    new THREE.MeshStandardMaterial({ color: 0xe0b48a, roughness: 0.7 }),
-    new THREE.MeshStandardMaterial({ color, roughness: 0.7 }),
-    new THREE.MeshStandardMaterial({ color: 0x3d4652, roughness: 0.8 }),
-  ];
-  for (const [i, { box }] of hitboxes({ x: 0, y: 0, z: 0 }, crouched).entries()) {
-    const m = new THREE.Mesh(
-      new THREE.BoxGeometry(box.max[0] - box.min[0], box.max[1] - box.min[1], box.max[2] - box.min[2]), mats[i]);
-    m.position.y = (box.min[1] + box.max[1]) / 2;
-    m.castShadow = true;
-    g.add(m);
+/** One stance (standing or crouched): torso, legs that swing from the hips, and arms + gun that tilt
+ * with the view pitch around the shoulders. Sized to the hitboxes, so what you see is what you hit. */
+type Stance = { group: THREE.Group; aim: THREE.Group; guns: THREE.Mesh[]; muzzles: THREE.Vector3[]; legs: THREE.Group[] };
+
+export function stance(o: Outfit, crouched: boolean, mat: THREE.Material): Stance {
+  const h = crouched ? CROUCH_HEIGHT : STAND_HEIGHT;
+  const group = new THREE.Group();
+  const k = new Kit();
+  const shoulder = torsoKit(o, h, k);
+  group.add(k.buildSingle(mat));
+  const aim = new THREE.Group();
+  aim.position.set(0, shoulder, 0);
+  group.add(aim);
+  const guns: THREE.Mesh[] = [], muzzles: THREE.Vector3[] = [];
+  for (let w = 0; w < WEAPONS.length; w++) {
+    const gk = new Kit();
+    muzzles.push(armsKit(o, w, gk).muzzle);
+    const mesh = gk.buildSingle(mat);
+    mesh.visible = w === 0;
+    aim.add(mesh);
+    guns.push(mesh);
   }
-  const top = hitboxes({ x: 0, y: 0, z: 0 }, crouched)[1].box.max[1];
-  const gun = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.09, 0.7), new THREE.MeshStandardMaterial({ color: 0x22252a }));
-  gun.position.set(0.18, top - 0.18, -0.3);
-  g.add(gun);
-  return g;
+  const legs = [-0.11, 0.11].map((x) => {
+    const pivot = new THREE.Group();
+    pivot.position.set(x, h * 0.45, 0);
+    const lk = new Kit();
+    legKit(o, h, crouched, lk);
+    pivot.add(lk.buildSingle(mat));
+    group.add(pivot);
+    return pivot;
+  });
+  return { group, aim, guns, muzzles, legs };
 }
 
-type View = { root: THREE.Group; stand: THREE.Group; crouch: THREE.Group };
+type View = {
+  root: THREE.Group; stand: Stance; crouch: Stance; mat: THREE.MeshStandardMaterial;
+  weapon: number; alive: boolean; dying: number; phase: number; last: THREE.Vector3; hurt: number;
+};
+
+const DEATH_TIME = 0.7;
 
 export class Remotes {
   private readonly views = new Map<number, View>();
   private readonly scene: THREE.Scene;
+  private lastTime = performance.now();
+  /** A running player's foot hit the ground (walking and crouching are silent, as in CS). */
+  onStep: (at: THREE.Vector3) => void = () => {};
 
   constructor(scene: THREE.Scene) {
     this.scene = scene;
   }
 
+  private create(p: RemotePlayer): View {
+    const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.75, metalness: 0.05 });
+    const o = OUTFITS[p.id % OUTFITS.length];
+    const v: View = { root: new THREE.Group(), stand: stance(o, false, mat), crouch: stance(o, true, mat), mat,
+      weapon: 0, alive: p.alive, dying: 0, phase: 0, last: new THREE.Vector3(p.x, p.y, p.z), hurt: 0 };
+    v.root.rotation.order = "YXZ"; // yaw first, then the death fall around the body's own axis
+    v.root.add(v.stand.group, v.crouch.group);
+    this.scene.add(v.root);
+    this.views.set(p.id, v);
+    return v;
+  }
+
   update(players: RemotePlayer[]): void {
+    const now = performance.now(), dt = Math.min(0.1, (now - this.lastTime) / 1000);
+    this.lastTime = now;
     const seen = new Set<number>();
     for (const p of players) {
       seen.add(p.id);
-      let v = this.views.get(p.id);
-      if (!v) {
-        const color = new THREE.Color().setHSL(((p.id * 0.137) % 1), 0.55, 0.45);
-        v = { root: new THREE.Group(), stand: body(false, color), crouch: body(true, color) };
-        v.root.add(v.stand, v.crouch);
-        this.scene.add(v.root);
-        this.views.set(p.id, v);
+      const v = this.views.get(p.id) ?? this.create(p);
+      if (v.alive && !p.alive) v.dying = DEATH_TIME;
+      v.alive = p.alive;
+      v.dying = Math.max(0, v.dying - dt);
+      const fall = p.alive ? 0 : 1 - (v.dying / DEATH_TIME) ** 2;
+      v.root.visible = p.alive || v.dying > 0;
+      v.root.position.set(p.x, p.y - fall * 0.15, p.z);
+      v.root.rotation.set(fall * Math.PI * 0.48, p.yaw, 0);
+
+      if (p.weapon !== v.weapon && WEAPONS[p.weapon]) {
+        for (const s of [v.stand, v.crouch]) s.guns.forEach((g, i) => (g.visible = i === p.weapon));
+        v.weapon = p.weapon;
       }
-      v.root.visible = p.alive;
-      v.stand.visible = !p.crouched;
-      v.crouch.visible = p.crouched;
-      v.root.position.set(p.x, p.y, p.z);
-      v.root.rotation.y = p.yaw;
+      v.stand.group.visible = !p.crouched;
+      v.crouch.group.visible = p.crouched;
+      const s = p.crouched ? v.crouch : v.stand;
+      s.aim.rotation.x = p.alive ? p.pitch : 0;
+
+      const speed = dt > 0 ? Math.hypot(p.x - v.last.x, p.z - v.last.z) / dt : 0;
+      v.last.set(p.x, p.y, p.z);
+      const stride = Math.floor(v.phase / Math.PI);
+      v.phase += dt * speed * 1.9;
+      if (p.alive && !p.crouched && speed > 3.6 && speed < 12 && Math.floor(v.phase / Math.PI) !== stride) this.onStep(v.root.position);
+      const swing = Math.sin(v.phase) * Math.min(1, speed / 4) * (p.crouched ? 0.25 : 0.6);
+      s.legs[0].rotation.x = swing;
+      s.legs[1].rotation.x = -swing;
+
+      v.hurt = Math.max(0, v.hurt - dt);
+      v.mat.emissive.setRGB(v.hurt > 0 ? 0.5 : 0, 0, 0);
     }
     for (const [id, v] of this.views)
       if (!seen.has(id)) {
         this.scene.remove(v.root);
-        v.root.traverse((o) => {
-          if (o instanceof THREE.Mesh) { o.geometry.dispose(); (o.material as THREE.Material).dispose(); }
-        });
+        v.root.traverse((o) => { if (o instanceof THREE.Mesh) o.geometry.dispose(); });
+        v.mat.dispose();
         this.views.delete(id);
       }
+  }
+
+  /** Muzzle of the gun as drawn now, or false if we don't draw that player. */
+  muzzle(id: number, out: THREE.Vector3): boolean {
+    const v = this.views.get(id);
+    if (!v || !v.root.visible) return false;
+    const s = v.crouch.group.visible ? v.crouch : v.stand;
+    s.aim.updateWorldMatrix(true, false);
+    out.copy(s.muzzles[v.weapon]).applyMatrix4(s.aim.matrixWorld);
+    return true;
+  }
+
+  hurt(id: number): void {
+    const v = this.views.get(id);
+    if (v) v.hurt = 0.1;
   }
 }

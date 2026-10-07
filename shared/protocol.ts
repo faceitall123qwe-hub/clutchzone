@@ -16,19 +16,20 @@ export type ClientMsg =
 
 export type RemotePlayer = {
   id: number; name: string; x: number; y: number; z: number; yaw: number; pitch: number;
-  crouched: boolean; alive: boolean; hp: number; kills: number; deaths: number; ping: number;
+  crouched: boolean; alive: boolean; hp: number; weapon: number; kills: number; deaths: number; ping: number;
 };
 
 export type GameEvent =
-  | { type: "shot"; id: number; o: Vec3; end: Vec3 }
+  | { type: "shot"; id: number; w: number; o: Vec3; end: Vec3 } // w: weapon id
   | { type: "hit"; by: number; target: number; part: Part; damage: number }
-  | { type: "kill"; killer: number; victim: number; head: boolean }
+  | { type: "kill"; killer: number; victim: number; head: boolean; w: number }
   | { type: "join"; id: number; name: string }
   | { type: "leave"; id: number; name: string };
 
 // Snapshots dominate bandwidth (and Fly bills outbound traffic), so other players travel as compact
 // tuples and the slowly changing roster (names, score, ping) only when it changes.
-export type PlayerTuple = [id: number, x: number, y: number, z: number, yaw: number, pitch: number, flags: number, hp: number];
+export type PlayerTuple = [id: number, x: number, y: number, z: number, yaw: number, pitch: number, flags: number, hp: number,
+  weapon: number];
 export type RosterEntry = [id: number, name: string, kills: number, deaths: number, ping: number];
 export const ALIVE = 1, CROUCHED = 2;
 
@@ -45,9 +46,9 @@ export type ServerMsg =
 export type Snapshot = { tick: number; you: You; players: RemotePlayer[]; events: GameEvent[] };
 
 export function decodePlayers(p: PlayerTuple[], roster: Map<number, RosterEntry>): RemotePlayer[] {
-  return p.map(([id, x, y, z, yaw, pitch, flags, hp]) => {
+  return p.map(([id, x, y, z, yaw, pitch, flags, hp, weapon]) => {
     const r = roster.get(id);
-    return { id, x, y, z, yaw, pitch, hp, alive: (flags & ALIVE) !== 0, crouched: (flags & CROUCHED) !== 0,
+    return { id, x, y, z, yaw, pitch, hp, weapon, alive: (flags & ALIVE) !== 0, crouched: (flags & CROUCHED) !== 0,
       name: r?.[1] ?? "…", kills: r?.[2] ?? 0, deaths: r?.[3] ?? 0, ping: r?.[4] ?? 0 };
   });
 }

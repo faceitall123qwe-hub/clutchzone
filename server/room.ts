@@ -2,9 +2,9 @@ import type { Vec3 } from "../shared/collision.ts";
 import { DAMAGE_SCALE } from "../shared/hitbox.ts";
 import { MAP, SPAWNS } from "../shared/map.ts";
 import * as P from "../shared/protocol.ts";
-import { newSim, shotSeed, simulate, traceMap, traceTargets, type Cmd, type Sim } from "../shared/sim.ts";
+import { gunOf, newSim, shotSeed, simulate, traceMap, traceTargets, type Cmd, type Sim } from "../shared/sim.ts";
 import { TICK } from "../shared/constants.ts";
-import { RIFLE } from "../shared/weapons.ts";
+import { WEAPONS } from "../shared/weapons.ts";
 import { BOT_NAMES, BotBrain } from "./bot.ts";
 
 const HISTORY = 64; // ticks of positions kept for lag compensation (~1 s)
@@ -58,6 +58,8 @@ export function sanitize(c: unknown): Cmd | null {
     walk: r.walk === true,
     fire: r.fire === true,
     reload: r.reload === true,
+    slot: Number.isInteger(r.slot) && WEAPONS[r.slot as number] ? r.slot as number : 0,
+    aim: r.aim === true,
   };
 }
 
@@ -193,15 +195,15 @@ export class Room {
       const wall = traceMap(b, MAP);
       const hit = traceTargets(b, this.posesAt(viewTick, p.id), wall.t);
       const t = hit?.t ?? wall.t;
-      this.events.push({ type: "shot", id: p.id, o: b.o,
+      this.events.push({ type: "shot", id: p.id, w: b.w, o: b.o,
         end: { x: b.o.x + b.d.x * t, y: b.o.y + b.d.y * t, z: b.o.z + b.d.z * t } });
-      if (hit) this.damage(p, this.players.get(hit.id)!, hit.part);
+      if (hit) this.damage(p, this.players.get(hit.id)!, hit.part, b.w);
     }
   }
 
-  private damage(by: Player, target: Player, part: keyof typeof DAMAGE_SCALE): void {
+  private damage(by: Player, target: Player, part: keyof typeof DAMAGE_SCALE, w: number): void {
     if (!target.alive) return;
-    const damage = Math.round(RIFLE.damage * DAMAGE_SCALE[part]);
+    const damage = Math.round(WEAPONS[w].damage * DAMAGE_SCALE[part]);
     target.hp -= damage;
     this.events.push({ type: "hit", by: by.id, target: target.id, part, damage });
     if (target.hp <= 0) {
@@ -211,7 +213,7 @@ export class Room {
       target.killedBy = by.id;
       target.deaths++;
       by.kills++;
-      this.events.push({ type: "kill", killer: by.id, victim: target.id, head: part === "head" });
+      this.events.push({ type: "kill", killer: by.id, victim: target.id, head: part === "head", w });
     }
   }
 
@@ -221,7 +223,7 @@ export class Room {
       if (p.bot) {
         const enemies = [...this.players.values()].filter((o) => o !== p && o.alive)
           .map((o) => ({ id: o.id, feet: o.sim.move.pos, crouched: o.sim.move.crouched }));
-        const cmd = p.bot.think(p.sim.move, p.yaw, p.pitch, p.sim.gun.ammo, enemies, this.tick);
+        const cmd = p.bot.think(p.sim.move, p.yaw, p.pitch, gunOf(p.sim).ammo, enemies, this.tick);
         this.runCommand(p, { ...cmd, seq: p.lastSeq + 1 }, this.tick);
       }
       p.budget = Math.min(p.budget + 1, BUDGET_CAP);
@@ -257,7 +259,7 @@ export class Room {
     const r = (v: number, k = 1000) => Math.round(v * k) / k;
     const p: P.PlayerTuple[] = [...this.players.values()].map((pl) => [
       pl.id, r(pl.sim.move.pos.x), r(pl.sim.move.pos.y), r(pl.sim.move.pos.z), r(pl.yaw, 1e4), r(pl.pitch, 1e4),
-      (pl.alive ? P.ALIVE : 0) | (pl.sim.move.crouched ? P.CROUCHED : 0), pl.hp,
+      (pl.alive ? P.ALIVE : 0) | (pl.sim.move.crouched ? P.CROUCHED : 0), pl.hp, pl.sim.slot,
     ]);
     const roster = JSON.stringify([...this.players.values()].map((pl): P.RosterEntry =>
       [pl.id, pl.name, pl.kills, pl.deaths, pl.ping]));

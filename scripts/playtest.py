@@ -70,6 +70,33 @@ with sync_playwright() as pw:
     page.wait_for_timeout(2600)
     check(state()["ammo"] == 30, "R reloads to a full magazine")
 
+    print("weapons: keys 1-3, Q, wheel, scope")
+    page.keyboard.press("Digit2")
+    page.wait_for_timeout(500)
+    check(state()["slot"] == 1, "2 takes the pistol")
+    ammo0 = state()["ammo"]
+    page.mouse.down(); page.wait_for_timeout(800); page.mouse.up()
+    for _ in range(3):
+        page.wait_for_timeout(200)
+        page.mouse.click(800, 450)
+    page.wait_for_timeout(200)
+    check(ammo0 - state()["ammo"] == 4, f"pistol: held trigger fires once, each click once ({ammo0 - state()['ammo']} shots)")
+    page.keyboard.press("Digit3")
+    page.wait_for_timeout(1000)
+    check(state()["slot"] == 2, "3 takes the sniper rifle")
+    page.mouse.click(800, 450, button="right")
+    page.wait_for_timeout(200)
+    check(page.is_visible("#scope"), "right mouse looks through the scope")
+    page.screenshot(path=str(OUT / "scope.png"))
+    page.keyboard.press("KeyQ")
+    page.wait_for_timeout(300)
+    check(state()["slot"] == 1 and not page.is_visible("#scope"), "Q goes back to the last weapon and drops the scope")
+    page.mouse.wheel(0, 100)
+    page.wait_for_timeout(300)
+    check(state()["slot"] == 2, "mouse wheel cycles weapons")
+    page.keyboard.press("Digit1")
+    page.wait_for_timeout(800)
+
     print("movement keys under pointer lock")
     p0 = state()["pos"]
     page.keyboard.down("KeyW"); page.wait_for_timeout(1000); page.keyboard.up("KeyW")

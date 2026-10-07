@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import type { Vec3 } from "../shared/collision.ts";
-import { hitboxes } from "../shared/hitbox.ts";
+import { TARGET_OUTFIT } from "./models";
+import { stance } from "./remote";
 
 /** Practice targets: walk back and forth between two points, die, respawn. No shooting back yet. */
 export class Bot {
@@ -10,7 +11,7 @@ export class Bot {
   readonly mesh = new THREE.Group();
   private t = Math.random() * 10;
   private flash = 0;
-  private readonly mats: THREE.MeshStandardMaterial[];
+  private readonly mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.75 });
   private readonly a: Vec3;
   private readonly b: Vec3;
   private readonly speed: number;
@@ -22,18 +23,9 @@ export class Bot {
     this.crouched = crouched;
     this.speed = speed;
     this.feet = { ...a };
-    const body = new THREE.MeshStandardMaterial({ color: 0xb8433a, roughness: 0.7 });
-    const head = new THREE.MeshStandardMaterial({ color: 0xe0b48a, roughness: 0.7 });
-    const legs = new THREE.MeshStandardMaterial({ color: 0x3d4652, roughness: 0.8 });
-    this.mats = [head, body, legs];
-    // one mesh per hitbox, so what you see is exactly what you can hit
-    for (const [i, { box }] of hitboxes({ x: 0, y: 0, z: 0 }, crouched).entries()) {
-      const s = [box.max[0] - box.min[0], box.max[1] - box.min[1], box.max[2] - box.min[2]];
-      const m = new THREE.Mesh(new THREE.BoxGeometry(s[0], s[1], s[2]), this.mats[i]);
-      m.position.set(0, (box.min[1] + box.max[1]) / 2, 0);
-      m.castShadow = true;
-      this.mesh.add(m);
-    }
+    // the same soldier as online, fitted to the hitboxes; facing the attackers' spawn
+    this.mesh.add(stance(TARGET_OUTFIT, crouched, this.mat).group);
+    this.mesh.rotation.y = Math.PI;
   }
 
   get alive() {
@@ -68,7 +60,7 @@ export class Bot {
   render(): void {
     this.mesh.visible = this.alive;
     this.mesh.position.set(this.feet.x, this.feet.y, this.feet.z);
-    for (const m of this.mats) m.emissive.setRGB(this.flash > 0 ? 0.6 : 0, 0, 0);
+    this.mat.emissive.setRGB(this.flash > 0 ? 0.6 : 0, 0, 0);
   }
 }
 

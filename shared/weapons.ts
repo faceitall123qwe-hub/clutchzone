@@ -7,13 +7,18 @@ export type WeaponStats = {
   magazine: number;
   reserve: number;
   reloadTime: number;
+  drawTime: number; // after switching to it, before it can fire
+  auto: boolean; // keeps firing while the trigger is held; otherwise one shot per click
+  speed: number; // share of run speed while holding it
   baseSpread: number; // radians, standing still
   moveSpread: number; // added at full running speed
   airSpread: number;
   crouchFactor: number;
   shotSpread: number; // extra per bullet into a spray, capped by maxShotSpread
   maxShotSpread: number;
+  recoil: number; // scale of the spray pattern
   recoilRecovery: number; // seconds of not shooting before the spray resets
+  scope?: { fov: number; spread: number; speed: number }; // fov in degrees; spread replaces baseSpread
 };
 
 export const RIFLE: WeaponStats = {
@@ -23,14 +28,62 @@ export const RIFLE: WeaponStats = {
   magazine: 30,
   reserve: 90,
   reloadTime: 2.4,
+  drawTime: 0.6,
+  auto: true,
+  speed: 1,
   baseSpread: 0.0035,
   moveSpread: 0.07,
   airSpread: 0.14,
   crouchFactor: 0.7,
   shotSpread: 0.0012,
   maxShotSpread: 0.018,
+  recoil: 1,
   recoilRecovery: 0.35,
 };
+
+export const PISTOL: WeaponStats = {
+  name: "P-9",
+  damage: 28, // four to the body, one to the head
+  interval: 0.15,
+  magazine: 12,
+  reserve: 48,
+  reloadTime: 2.1,
+  drawTime: 0.35,
+  auto: false,
+  speed: 1,
+  baseSpread: 0.005,
+  moveSpread: 0.035,
+  airSpread: 0.1,
+  crouchFactor: 0.8,
+  shotSpread: 0.004,
+  maxShotSpread: 0.03,
+  recoil: 0.45,
+  recoilRecovery: 0.3,
+};
+
+export const SNIPER: WeaponStats = {
+  name: "Longbow",
+  damage: 115, // one body shot kills, a leg shot doesn't
+  interval: 1.45, // bolt action
+  magazine: 5,
+  reserve: 20,
+  reloadTime: 3.4,
+  drawTime: 0.9,
+  auto: false,
+  speed: 0.85,
+  baseSpread: 0.05, // without the scope it's a gamble
+  moveSpread: 0.12,
+  airSpread: 0.25,
+  crouchFactor: 0.8,
+  shotSpread: 0,
+  maxShotSpread: 0,
+  recoil: 0,
+  recoilRecovery: 0.35,
+  scope: { fov: 22, spread: 0.0006, speed: 0.42 },
+};
+
+/** Index = weapon id = slot (key 1, 2, 3). */
+export const WEAPONS: readonly WeaponStats[] = [RIFLE, PISTOL, SNIPER];
 
 const deg = Math.PI / 180;
 
@@ -38,19 +91,20 @@ const deg = Math.PI / 180;
  * Where bullet n of a spray goes relative to the crosshair, as [pitch up, yaw right] in radians:
  * straight up for the first ~9 shots, then a slow left-right sway. Learnable, like a real pattern.
  */
-export function recoilOffset(shot: number): [number, number] {
+export function recoilOffset(shot: number, w: WeaponStats): [number, number] {
   const pitch = Math.min(6.2, 6.4 * (1 - Math.exp(-shot / 6))) * deg;
   const yaw = shot < 9 ? 0.15 * shot * deg : 1.6 * Math.sin((shot - 9) / 3.2) * deg;
-  return [pitch, yaw];
+  return [pitch * w.recoil, yaw * w.recoil];
 }
 
 /** Below this share of run speed a rifle counts as standing still, as in CS: it's what makes
  * counter-strafing (tapping the opposite key to stop) worth learning. */
 export const ACCURATE_SPEED = 0.34;
 
-export function spread(w: WeaponStats, speed: number, onGround: boolean, crouched: boolean, shot: number): number {
-  const moving = Math.max(0, Math.min(speed / C.MAX_SPEED, 1) - ACCURATE_SPEED) / (1 - ACCURATE_SPEED);
-  let s = w.baseSpread + w.moveSpread * moving ** 1.5;
+export function spread(w: WeaponStats, speed: number, onGround: boolean, crouched: boolean, shot: number,
+                       scoped = false): number {
+  const moving = Math.max(0, Math.min(speed / (C.MAX_SPEED * w.speed), 1) - ACCURATE_SPEED) / (1 - ACCURATE_SPEED);
+  let s = (scoped && w.scope ? w.scope.spread : w.baseSpread) + w.moveSpread * moving ** 1.5;
   if (!onGround) s += w.airSpread;
   if (crouched && onGround) s *= w.crouchFactor;
   return s + Math.min(shot * w.shotSpread, w.maxShotSpread);

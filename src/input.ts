@@ -1,7 +1,7 @@
 const held = new Set<string>();
 // Keys pressed since the last tick. A tap shorter than one 16 ms tick would otherwise be missed.
 const pressed = new Set<string>();
-let mouseDX = 0, mouseDY = 0;
+let mouseDX = 0, mouseDY = 0, wheel = 0;
 
 addEventListener("keydown", (e) => {
   if (!e.repeat) pressed.add(e.code);
@@ -21,6 +21,7 @@ addEventListener("mousemove", (e) => {
   mouseDX += e.movementX;
   mouseDY += e.movementY;
 });
+addEventListener("wheel", (e) => { if (locked()) wheel += Math.sign(e.deltaY); });
 addEventListener("contextmenu", (e) => e.preventDefault());
 
 export const locked = () => document.pointerLockElement !== null;
@@ -46,6 +47,14 @@ export function axes() {
     fire: down("Mouse0"),
     reload: down("KeyR"),
   };
+  // presses, not holds: weapon choice and the scope toggle
+  const keys = {
+    slot: ["Digit1", "Digit2", "Digit3"].findIndex((k) => pressed.has(k)),
+    lastWeapon: pressed.has("KeyQ"),
+    wheel,
+    scope: pressed.has("Mouse2"),
+  };
+  wheel = 0;
   pressed.clear();
-  return a;
+  return { ...a, ...keys };
 }
