@@ -11,7 +11,8 @@
     "test": "node --test \"shared/**/*.test.ts\" \"server/**/*.test.ts\"",
     "server": "node server/main.ts",
     "server:dev": "node --watch server/main.ts --dev",
-    "start": "npm run build && node server/main.ts"
+    "start": "npm run build && node server/main.ts",
+    "share": "npm run build && node scripts/share.ts"
   },
   "dependencies": {
     "three": "^0.186.1",

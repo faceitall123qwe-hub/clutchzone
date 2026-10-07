@@ -23,6 +23,7 @@
   "include": [
     "src",
     "shared",
-    "server"
+    "server",
+    "scripts"
   ]
 }

@@ -31,21 +31,41 @@ const http = createServer((req, res) => {
   createReadStream(file).pipe(res);
 });
 
+const MAX_ROOMS = 100;
+const MAX_PER_IP = 4;
+const MAX_MSGS_PER_SEC = 240; // 60 commands + catch-up bursts + pings; a flood beyond that disconnects
+
 const rooms = new Map<string, Room>();
+const perIp = new Map<string, number>();
 const wss = new WebSocketServer({ server: http, path: "/ws", maxPayload: 4096 });
 
 wss.on("connection", (ws, req) => {
+  // Behind a Cloudflare tunnel every socket comes from localhost; the visitor's address is in a header.
+  const ip = String(req.headers["cf-connecting-ip"] ?? req.socket.remoteAddress ?? "?");
+  if ((perIp.get(ip) ?? 0) >= MAX_PER_IP) { ws.close(1008, "too many connections"); return; }
+  perIp.set(ip, (perIp.get(ip) ?? 0) + 1);
+  ws.on("close", () => {
+    const n = (perIp.get(ip) ?? 1) - 1;
+    if (n > 0) perIp.set(ip, n); else perIp.delete(ip);
+  });
+
   const url = new URL(req.url ?? "", "http://x");
   const roomId = (url.searchParams.get("room") ?? "").replace(/[^a-z0-9-]/gi, "").slice(0, 24) || "lobby";
   const name = (url.searchParams.get("name") ?? "").replace(/[<>]/g, "").trim();
   let room = rooms.get(roomId);
-  if (!room) rooms.set(roomId, (room = new Room(roomId, DEV)));
+  if (!room) {
+    if (rooms.size >= MAX_ROOMS) { ws.close(1013, "server full"); return; }
+    rooms.set(roomId, (room = new Room(roomId, DEV)));
+  }
   const send = (m: ServerMsg) => { if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(m)); };
   if (room.full) { send({ type: "full" }); ws.close(); return; }
 
   const player = room.join(name, send);
   console.log(`[${roomId}] +${player.name} (${room.players.size} players)`);
+  let windowStart = Date.now(), count = 0;
   ws.on("message", (data) => {
+    if (Date.now() - windowStart > 1000) { windowStart = Date.now(); count = 0; }
+    if (++count > MAX_MSGS_PER_SEC) { ws.close(1008, "flood"); return; }
     let msg: ClientMsg;
     try { msg = JSON.parse(String(data)); } catch { return; }
     room.onMessage(player, msg);
