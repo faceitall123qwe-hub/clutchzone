@@ -119,8 +119,7 @@ function onSnap(s: Extract<ServerMsg, { type: "snap" }>): void {
   }
 }
 
-async function goOnline(): Promise<void> {
-  const room = roomParam ?? Math.random().toString(36).slice(2, 8);
+async function goOnline(room: string): Promise<void> {
   history.replaceState(null, "", `?room=${room}`);
   const net = new Net(room, hud.name);
   mode = { kind: "online", net };
@@ -213,11 +212,35 @@ startLoop(
 );
 
 const lock = () => void renderer.domElement.requestPointerLock();
-hud.on("online", () => {
+const randomRoom = () => Math.random().toString(36).slice(2, 8);
+async function quickPlayRoom(): Promise<string> {
+  try {
+    return (await (await fetch("api/quickplay")).json()).room;
+  } catch {
+    return `pub-${randomRoom()}`;
+  }
+}
+const join = (room: string) => {
   unlockAudio();
   lock(); // must happen inside the click: browsers only grant pointer lock to a user gesture
-  if (!mode) void goOnline();
+  if (!mode) void goOnline(room);
+};
+hud.on("online", () => {
+  if (mode || roomParam) { join(roomParam ?? ""); return; }
+  unlockAudio();
+  lock();
+  void quickPlayRoom().then((room) => { if (!mode) void goOnline(room); });
 });
+hud.on("private", () => join(randomRoom()));
+// keep the public room list fresh while the menu is open before the game starts
+async function refreshRooms(): Promise<void> {
+  if (mode) return;
+  try {
+    hud.rooms(await (await fetch("api/rooms")).json(), join);
+  } catch { /* static hosting without the game server: no list */ }
+}
+void refreshRooms();
+setInterval(refreshRooms, 3000);
 hud.on("range", () => {
   unlockAudio();
   lock();
@@ -241,7 +264,7 @@ if (import.meta.env.DEV) {
   Object.assign(window, {
     __game: {
       start: () => { if (!mode) goRange(); hud.menu(false); devInput = true; },
-      join: async () => { hud.menu(false); devInput = true; await goOnline(); return myId; },
+      join: async () => { hud.menu(false); devInput = true; await goOnline(roomParam ?? (await quickPlayRoom())); return myId; },
       look: (y: number, p: number) => { yaw = y; pitch = p; },
       fire: (ticks: number) => { devFire = ticks; },
       teleport: (x: number, y: number, z: number) => {

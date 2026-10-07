@@ -2,7 +2,7 @@ import type { Vec3 } from "../shared/collision.ts";
 import { DAMAGE_SCALE } from "../shared/hitbox.ts";
 import { MAP, SPAWNS } from "../shared/map.ts";
 import * as P from "../shared/protocol.ts";
-import { cloneSim, newSim, shotSeed, simulate, traceMap, traceTargets, type Cmd, type Sim } from "../shared/sim.ts";
+import { newSim, shotSeed, simulate, traceMap, traceTargets, type Cmd, type Sim } from "../shared/sim.ts";
 import { TICK } from "../shared/constants.ts";
 import { RIFLE } from "../shared/weapons.ts";
 
@@ -31,7 +31,7 @@ export type Player = {
   lastSeq: number;
   queue: { cmd: Cmd; viewTick: number }[];
   budget: number;
-  send: (msg: P.ServerMsg) => void;
+  send: (msg: P.ServerMsg | string) => void; // a string is an already serialised message
 };
 
 const ALL_SPAWNS = [...SPAWNS.attackers, ...SPAWNS.defenders];
@@ -76,7 +76,7 @@ export class Room {
     return this.players.size >= P.MAX_PLAYERS;
   }
 
-  join(name: string, send: (m: P.ServerMsg) => void): Player {
+  join(name: string, send: (m: P.ServerMsg | string) => void): Player {
     const p: Player = {
       id: this.nextId++, name: name.slice(0, 16) || "Player", sim: newSim(), yaw: 0, pitch: 0, hp: P.MAX_HP,
       alive: true, respawnIn: 0, killedBy: null, kills: 0, deaths: 0, ping: 0, lastSeq: 0, queue: [], budget: 2, send,
@@ -214,18 +214,22 @@ export class Room {
   }
 
   private broadcast(): void {
+    // Other players are only drawn, so millimetres are plenty; your own state ("you") stays exact,
+    // because prediction replays from it and must match the server bit for bit.
+    const r = (v: number, k = 1000) => Math.round(v * k) / k;
     const players: P.RemotePlayer[] = [...this.players.values()].map((p) => ({
-      id: p.id, name: p.name, x: p.sim.move.pos.x, y: p.sim.move.pos.y, z: p.sim.move.pos.z, yaw: p.yaw,
-      pitch: p.pitch, crouched: p.sim.move.crouched, alive: p.alive, hp: p.hp, kills: p.kills, deaths: p.deaths,
-      ping: p.ping,
+      id: p.id, name: p.name, x: r(p.sim.move.pos.x), y: r(p.sim.move.pos.y), z: r(p.sim.move.pos.z),
+      yaw: r(p.yaw, 1e4), pitch: r(p.pitch, 1e4), crouched: p.sim.move.crouched, alive: p.alive, hp: p.hp,
+      kills: p.kills, deaths: p.deaths, ping: p.ping,
     }));
     const events = this.events;
     this.events = [];
-    for (const p of this.players.values())
-      p.send({
-        type: "snap", tick: this.tick, players, events,
-        you: { lastSeq: p.lastSeq, sim: cloneSim(p.sim), hp: p.hp, alive: p.alive, respawnIn: p.respawnIn,
-          killedBy: p.killedBy },
-      });
+    // The part everyone gets is serialised once per room, not once per player.
+    const head = `{"type":"snap","tick":${this.tick},"players":${JSON.stringify(players)},"events":${JSON.stringify(events)},"you":`;
+    for (const p of this.players.values()) {
+      const you: Extract<P.ServerMsg, { type: "snap" }>["you"] = { lastSeq: p.lastSeq, sim: p.sim, hp: p.hp,
+        alive: p.alive, respawnIn: p.respawnIn, killedBy: p.killedBy };
+      p.send(`${head}${JSON.stringify(you)}}`);
+    }
   }
 }

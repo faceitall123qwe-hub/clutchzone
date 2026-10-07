@@ -1,0 +1,22 @@
+# Fly.io: one machine in Warsaw. Rooms live in that process's memory, so the game must run on
+# exactly one machine: deploy with `fly deploy --ha=false` and never scale above 1.
+app = "CHANGE-ME"
+primary_region = "waw"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "off" # a sleeping server would drop everyone mid-match
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    method = "GET"
+    path = "/healthz"
+    interval = "15s"
+    timeout = "5s"
+    grace_period = "10s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

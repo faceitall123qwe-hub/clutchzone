@@ -44,6 +44,11 @@
     #invite { display: none; gap: 8px; align-items: center; margin-top: 10px; font-size: 13px; }
     #invite input { flex: 1; font-size: 12px; padding: 8px; min-width: 0; }
     #invite button { width: auto; padding: 8px 12px; font-size: 13px; }
+    #rooms { display: grid; gap: 6px; margin-top: 10px; }
+    #rooms button.room { display: flex; justify-content: space-between; padding: 10px 14px; font: 600 14px system-ui;
+      background: #0e1116; color: #e9e4d8; border: 1px solid #2c3440; }
+    #rooms button.room:hover { border-color: #e2b23c; }
+    #rooms button.room b { color: #6dff7a; }
     #error { color: #ff7b6b; font-size: 14px; min-height: 0; margin: 10px 0 0; }
     #target { position: absolute; left: 50%; top: calc(50% + 26px); transform: translateX(-50%); font-weight: 600; font-size: 14px; color: #ffd9d4; }
     #damage { position: absolute; inset: 0; opacity: 0; background: radial-gradient(ellipse at center, transparent 55%, rgba(200,20,20,.55)); }

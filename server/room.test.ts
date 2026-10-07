@@ -14,7 +14,7 @@ function setup() {
   const inbox = new Map<number, ServerMsg[]>();
   const join = (name: string) => {
     const box: ServerMsg[] = [];
-    const p = room.join(name, (m) => box.push(m));
+    const p = room.join(name, (m) => box.push(typeof m === "string" ? JSON.parse(m) : m));
     inbox.set(p.id, box);
     return p;
   };

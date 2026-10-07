@@ -10,7 +10,7 @@ import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer } from "ws";
 import { TICK } from "../shared/constants.ts";
-import type { ClientMsg, ServerMsg } from "../shared/protocol.ts";
+import { MAX_PLAYERS, type ClientMsg, type ServerMsg } from "../shared/protocol.ts";
 import { Room } from "./room.ts";
 
 const PORT = Number(process.env.PORT ?? 8080);
@@ -21,7 +21,37 @@ const TYPES: Record<string, string> = {
   ".png": "image/png", ".glb": "model/gltf-binary", ".json": "application/json", ".ogg": "audio/ogg",
 };
 
+const json = (res: import("node:http").ServerResponse, body: unknown) => {
+  res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+  res.end(JSON.stringify(body));
+};
+
+/** Public rooms are the ones quick play creates; invite-link rooms stay private and unlisted. */
+const isPublic = (id: string) => id.startsWith("pub-");
+const QUICKPLAY_FILL = 8; // start a new public room once the busiest one reaches this
+
+function publicRooms() {
+  return [...rooms.values()].filter((r) => isPublic(r.id))
+    .map((r) => ({ id: r.id, players: r.players.size, max: MAX_PLAYERS }))
+    .sort((a, b) => b.players - a.players);
+}
+
 const http = createServer((req, res) => {
+  const route = (req.url ?? "/").split("?")[0];
+  if (route === "/healthz") {
+    const players = [...rooms.values()].reduce((n, r) => n + r.players.size, 0);
+    json(res, { ok: true, rooms: rooms.size, players, tickAvgMs: +(stepTotal / Math.max(stepCount, 1)).toFixed(3),
+      tickMaxMs: +stepMax.toFixed(3) });
+    stepTotal = stepCount = stepMax = 0;
+    return;
+  }
+  if (route === "/api/rooms") { json(res, publicRooms()); return; }
+  if (route === "/api/quickplay") {
+    // fullest public room that still has space, so strangers end up playing together
+    const open = publicRooms().find((r) => r.players < QUICKPLAY_FILL);
+    json(res, { room: open?.id ?? `pub-${Math.random().toString(36).slice(2, 7)}` });
+    return;
+  }
   const path = normalize(decodeURIComponent((req.url ?? "/").split("?")[0])).replace(/^([/\\])+/, "");
   let file = join(DIST, path || "index.html");
   if (!file.startsWith(DIST)) { res.writeHead(403).end(); return; } // no ../ escapes
@@ -32,7 +62,7 @@ const http = createServer((req, res) => {
 });
 
 const MAX_ROOMS = 100;
-const MAX_PER_IP = 4;
+const MAX_PER_IP = Number(process.env.MAX_PER_IP ?? 4); // raised only for load tests
 const MAX_MSGS_PER_SEC = 240; // 60 commands + catch-up bursts + pings; a flood beyond that disconnects
 
 const rooms = new Map<string, Room>();
@@ -57,7 +87,9 @@ wss.on("connection", (ws, req) => {
     if (rooms.size >= MAX_ROOMS) { ws.close(1013, "server full"); return; }
     rooms.set(roomId, (room = new Room(roomId, DEV)));
   }
-  const send = (m: ServerMsg) => { if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(m)); };
+  const send = (m: ServerMsg | string) => {
+    if (ws.readyState === ws.OPEN) ws.send(typeof m === "string" ? m : JSON.stringify(m));
+  };
   if (room.full) { send({ type: "full" }); ws.close(); return; }
 
   const player = room.join(name, send);
@@ -79,14 +111,23 @@ wss.on("connection", (ws, req) => {
 
 // Fixed 60 Hz simulation. Timers on Windows are coarse, so step by elapsed time, not by callback count.
 let last = performance.now(), acc = 0;
+let stepTotal = 0, stepCount = 0, stepMax = 0; // cost of one tick for all rooms, reported on /healthz
 setInterval(() => {
   const now = performance.now();
   acc = Math.min(acc + (now - last) / 1000, 0.25);
   last = now;
   while (acc >= TICK) {
+    const t0 = performance.now();
     for (const room of rooms.values()) room.step();
+    const ms = performance.now() - t0;
+    stepTotal += ms;
+    stepCount++;
+    stepMax = Math.max(stepMax, ms);
     acc -= TICK;
   }
 }, 4);
+
+// For profiling runs (node --cpu-prof): exit cleanly so the profile gets written.
+if (process.env.EXIT_AFTER_S) setTimeout(() => process.exit(0), Number(process.env.EXIT_AFTER_S) * 1000);
 
 http.listen(PORT, () => console.log(`game server on http://localhost:${PORT}${DEV ? " (dev commands on)" : ""}`));

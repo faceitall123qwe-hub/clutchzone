@@ -18,8 +18,10 @@ const html = `
     <h1>OUTPOST</h1>
     <p class="sub" id="sub">Browser tactical shooter</p>
     <label class="name">Your name <input id="name" maxlength="16" autocomplete="off" spellcheck="false"></label>
-    <button id="online">Play online</button>
+    <button id="online">Quick play</button>
+    <div id="rooms"></div>
     <div id="invite"><span>Invite friends:</span><input id="link" readonly><button id="copy">Copy</button></div>
+    <button id="private" class="ghost">Create private room</button>
     <button id="range" class="ghost">Shooting range (offline)</button>
     <p id="error"></p>
     <dl>
@@ -61,8 +63,10 @@ export class Hud {
     const link = opts.room ? `${location.origin}${location.pathname}?room=${opts.room}` : "";
     (this.el("link") as HTMLInputElement).value = link;
     this.el("invite").style.display = opts.room ? "flex" : "none";
-    this.el("online").textContent = opts.playing ? "Resume" : opts.room ? `Join room ${opts.room}` : "Play online";
+    this.el("online").textContent = opts.playing ? "Resume" : opts.room ? `Join room ${opts.room}` : "Quick play";
     this.el("range").style.display = opts.playing ? "none" : "block";
+    this.el("private").style.display = opts.playing ? "none" : "block";
+    this.el("rooms").style.display = opts.playing ? "none" : "grid";
     this.el("sub").textContent = opts.playing === "range" ? "Shooting range · offline"
       : opts.room ? `Room ${opts.room}` : "Browser tactical shooter";
   }
@@ -71,8 +75,20 @@ export class Hud {
     this.el("error").textContent = text;
   }
 
-  on(id: "online" | "range", fn: () => void): void {
+  on(id: "online" | "private" | "range", fn: () => void): void {
     this.el(id).addEventListener("click", fn);
+  }
+
+  /** Open public rooms; clicking one calls join(id). */
+  rooms(list: { id: string; players: number; max: number }[], join: (id: string) => void): void {
+    const box = this.el("rooms");
+    box.replaceChildren(...list.filter((r) => r.players > 0).slice(0, 6).map((r) => {
+      const b = document.createElement("button");
+      b.className = "room";
+      b.innerHTML = `<span>${esc(r.id.replace(/^pub-/, "Room "))}</span><b>${r.players}/${r.max}</b>`;
+      b.addEventListener("click", () => join(r.id));
+      return b;
+    }));
   }
 
   crosshair(gapPx: number): void {
