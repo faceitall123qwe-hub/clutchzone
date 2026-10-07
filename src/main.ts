@@ -1,22 +1,25 @@
 import * as THREE from "three";
-import { rayBox } from "../shared/collision.ts";
 import { MAX_SPEED } from "../shared/constants.ts";
-import { DAMAGE_SCALE, rayPlayer } from "../shared/hitbox.ts";
+import { viewRecoil } from "../shared/gun.ts";
+import { DAMAGE_SCALE } from "../shared/hitbox.ts";
 import { MAP, SPAWNS } from "../shared/map.ts";
-import { eyeHeight, newPlayer, stepPlayer } from "../shared/movement.ts";
-import { bulletDirection, mulberry32, RIFLE, spread } from "../shared/weapons.ts";
+import { eyeHeight } from "../shared/movement.ts";
+import type { ServerMsg } from "../shared/protocol.ts";
+import { cloneSim, newSim, RANGE, shotSeed, simulate, traceMap, traceTargets, type Bullet, type Cmd } from "../shared/sim.ts";
+import { RIFLE, spread } from "../shared/weapons.ts";
 import { click, gunshot, hitSound, unlockAudio } from "./audio";
-import { spawnBots } from "./bots";
+import { spawnBots, type Bot } from "./bots";
 import { Decals, Tracers } from "./effects";
 import { Hud } from "./hud";
-import { axes, locked, takeMouse } from "./input";
+import { axes, isDown, locked, takeMouse } from "./input";
 import { startLoop } from "./loop";
-import { Gun, ViewModel } from "./weapon";
+import { Net } from "./net";
+import { Remotes } from "./remote";
+import { ViewModel } from "./weapon";
 import { buildWorld } from "./world";
 
 const SENSITIVITY = 0.0022; // radians per mouse pixel
 const VIEW_RECOIL = 0.45; // share of the spray the camera shows; bullets land above the crosshair
-const RANGE = 120;
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -36,90 +39,164 @@ view.resize(innerWidth / innerHeight);
 const hud = new Hud();
 const decals = new Decals(scene);
 const tracers = new Tracers(scene);
-const bots = spawnBots(scene);
+const remotes = new Remotes(scene);
+
+type Mode = { kind: "range"; bots: Bot[] } | { kind: "online"; net: Net };
+let mode: Mode | null = null;
 
 const spawn = SPAWNS.attackers[2];
-const me = newPlayer(spawn.x, 0, spawn.z);
-let yaw = spawn.yaw, pitch = 0;
-const gun = new Gun(RIFLE);
-const rand = mulberry32(Date.now());
-let devFire = 0; // dev hook: ticks of forced trigger
-let devInput = false; // dev hook: read keys without pointer lock (headless browsers have none)
+let me = newSim(spawn.x, 0, spawn.z);
+let yaw = spawn.yaw, pitch = 0, seq = 0, myId = 1;
+let pending: Cmd[] = []; // sent to the server, not yet acknowledged
+const prev = { ...me.move.pos };
+let eye = eyeHeight(me.move);
+let alive = true, hp = 100, respawnIn = 0, killedBy: string | null = null;
+const names = new Map<number, string>();
+let devFire = 0, devInput = false; // dev hooks for headless checks
 let frames = 0, fps = 0, fpsSince = performance.now();
-const prev = { ...me.pos };
-let eye = eyeHeight(me);
 
-function shoot(): void {
-  const speed = Math.hypot(me.vel.x, me.vel.z);
-  const cone = spread(RIFLE, speed, me.onGround, me.crouched, gun.shot);
-  const d = bulletDirection(yaw, pitch, gun.nextRecoil(), cone, rand);
-  const o = { x: me.pos.x, y: me.pos.y + eyeHeight(me), z: me.pos.z };
+const roomParam = new URLSearchParams(location.search).get("room")?.replace(/[^a-z0-9-]/gi, "") || undefined;
+hud.menu(true, { room: roomParam });
 
-  let wallT = RANGE, normal: [number, number, number] = [0, 1, 0];
-  for (const b of MAP) {
-    const h = rayBox(o, d, b, wallT);
-    if (h && h.t < wallT) { wallT = h.t; normal = h.normal; }
-  }
-  let target: { bot: (typeof bots)[number]; t: number; part: keyof typeof DAMAGE_SCALE } | null = null;
-  for (const bot of bots) {
-    if (!bot.alive) continue;
-    const h = rayPlayer(o, d, bot.feet, bot.crouched, wallT);
-    if (h && (!target || h.t < target.t)) target = { bot, t: h.t, part: h.part };
-  }
+const vec = (v: { x: number; y: number; z: number }) => new THREE.Vector3(v.x, v.y, v.z);
 
-  hud.shot();
-  const end = new THREE.Vector3(o.x + d.x * (target?.t ?? wallT), o.y + d.y * (target?.t ?? wallT), o.z + d.z * (target?.t ?? wallT));
-  if (target) {
-    const kill = target.bot.hit(RIFLE.damage * DAMAGE_SCALE[target.part]);
-    hud.hit(target.part === "head", kill);
-    hitSound(target.part === "head");
-  } else if (wallT < RANGE) {
-    decals.add(end, new THREE.Vector3(...normal));
+/** Muzzle flash, tracer and bullet hole for one of our bullets; in the range also the damage. */
+function ourShot(b: Bullet): void {
+  const wall = traceMap(b, MAP);
+  let t = wall.t;
+  if (mode?.kind === "range") {
+    const hit = traceTargets(b, mode.bots.filter((x) => x.alive).map((x) => ({ id: x, feet: x.feet, crouched: x.crouched })), wall.t);
+    if (hit) {
+      t = hit.t;
+      const kill = hit.id.hit(RIFLE.damage * DAMAGE_SCALE[hit.part]);
+      hud.hit(hit.part === "head", kill);
+      hitSound(hit.part === "head");
+      if (kill) hud.feed(`You ${hit.part === "head" ? "⌖" : "→"} Target`, true);
+    }
   }
-  // tracer starts a little below and right of the eye, roughly at the muzzle
+  const end = vec(b.o).addScaledVector(vec(b.d), t);
+  if (t === wall.t && wall.hitWall) decals.add(end, new THREE.Vector3(...wall.normal));
   const right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
-  tracers.add(new THREE.Vector3(o.x, o.y - 0.12, o.z).addScaledVector(right, 0.15), end);
+  tracers.add(vec(b.o).add(new THREE.Vector3(0, -0.12, 0)).addScaledVector(right, 0.15), end);
+  hud.shot();
   view.fired();
   gunshot();
+}
+
+function onSnap(s: Extract<ServerMsg, { type: "snap" }>): void {
+  for (const p of s.players) names.set(p.id, p.name);
+  // Reconcile: take the server's state for the last command it ran, replay the ones it hasn't yet.
+  const before = { ...me.move.pos };
+  me = cloneSim(s.you.sim);
+  pending = pending.filter((c) => c.seq > s.you.lastSeq);
+  if (s.you.alive) for (const c of pending) simulate(me, c, shotSeed(myId, c.seq), MAP);
+  if (Math.hypot(me.move.pos.x - before.x, me.move.pos.z - before.z) > 2) Object.assign(prev, me.move.pos); // respawn
+  if (!alive && s.you.alive) yaw = Math.atan2(me.move.pos.x, me.move.pos.z); // face the middle of the map
+  alive = s.you.alive;
+  hp = s.you.hp;
+  respawnIn = s.you.respawnIn;
+  killedBy = s.you.alive ? null : names.get(s.you.killedBy ?? -1) ?? "someone";
+
+  const killed = new Set(s.events.flatMap((e) => (e.type === "kill" ? [e.victim] : [])));
+  for (const e of s.events) {
+    if (e.type === "shot" && e.id !== myId) {
+      tracers.add(vec(e.o), vec(e.end));
+      const d = Math.hypot(e.o.x - me.move.pos.x, e.o.z - me.move.pos.z);
+      gunshot(Math.min(0.8, 6 / (d + 6)));
+    } else if (e.type === "hit" && e.by === myId) {
+      hud.hit(e.part === "head", killed.has(e.target));
+      hitSound(e.part === "head");
+    } else if (e.type === "hit" && e.target === myId) {
+      hud.hurt();
+    } else if (e.type === "kill") {
+      hud.feed(`${names.get(e.killer) ?? "?"} ${e.head ? "⌖" : "→"} ${names.get(e.victim) ?? "?"}`,
+        e.killer === myId || e.victim === myId);
+    } else if (e.type === "join" && e.id !== myId) {
+      hud.feed(`${e.name} joined`);
+    } else if (e.type === "leave") {
+      hud.feed(`${e.name} left`);
+    }
+  }
+}
+
+async function goOnline(): Promise<void> {
+  const room = roomParam ?? Math.random().toString(36).slice(2, 8);
+  history.replaceState(null, "", `?room=${room}`);
+  const net = new Net(room, hud.name);
+  mode = { kind: "online", net };
+  net.onSnap = onSnap;
+  net.onClose = (reason) => { hud.error(reason); document.exitPointerLock(); };
+  try {
+    myId = await net.ready;
+  } catch (e) {
+    hud.error((e as Error).message);
+    mode = null;
+  }
+}
+
+function goRange(): void {
+  mode = { kind: "range", bots: spawnBots(scene) };
+  me = newSim(spawn.x, 0, spawn.z);
+  Object.assign(prev, me.move.pos);
 }
 
 startLoop(
   (dt) => {
     const [mx, my] = takeMouse();
     yaw -= mx * SENSITIVITY;
+    if (Math.abs(yaw) > Math.PI) yaw -= Math.PI * 2 * Math.round(yaw / (Math.PI * 2)); // the server wraps yaw too
     pitch = Math.max(-1.55, Math.min(1.55, pitch - my * SENSITIVITY));
     const a = locked() || devInput ? axes() : { forward: 0, right: 0, jump: false, crouch: false, walk: false, fire: false, reload: false };
-
-    Object.assign(prev, me.pos);
-    stepPlayer(me, { forward: a.forward, right: a.right, yaw, jump: a.jump, crouch: a.crouch, walk: a.walk }, dt, MAP);
-
-    const wasReloading = gun.reloading > 0;
-    const shots = gun.update(dt, a.fire || devFire > 0, a.reload);
+    const cmd: Cmd = { ...a, fire: a.fire || devFire > 0, seq: ++seq, yaw, pitch };
     devFire = Math.max(0, devFire - 1);
-    for (let i = 0; i < shots; i++) shoot();
-    if (!wasReloading && gun.reloading > 0) click();
 
-    for (const b of bots) b.update(dt);
+    Object.assign(prev, me.move.pos);
+    const wasReloading = me.gun.reloading > 0;
+    if (mode?.kind === "online") {
+      if (alive) for (const b of simulate(me, cmd, shotSeed(myId, cmd.seq), MAP)) ourShot(b);
+      pending.push(cmd);
+      mode.net.send({ type: "input", cmd, viewTick: mode.net.viewTick() });
+    } else if (mode?.kind === "range") {
+      for (const b of simulate(me, cmd, shotSeed(myId, cmd.seq), MAP)) ourShot(b);
+      for (const bot of mode.bots) bot.update(dt);
+    }
+    if (!wasReloading && me.gun.reloading > 0) click();
+
     tracers.update(dt);
     hud.update(dt);
-    view.update(dt, Math.hypot(me.vel.x, me.vel.z), gun.reloading, RIFLE.reloadTime);
+    view.update(dt, Math.hypot(me.move.vel.x, me.move.vel.z), me.gun.reloading, RIFLE.reloadTime);
   },
   (alpha) => {
-    eye += (eyeHeight(me) - eye) * 0.35; // smooth the crouch transition
-    const [rp, ry] = gun.viewRecoil();
-    camera.position.set(
-      prev.x + (me.pos.x - prev.x) * alpha,
-      prev.y + (me.pos.y - prev.y) * alpha + eye,
-      prev.z + (me.pos.z - prev.z) * alpha,
-    );
+    eye += (eyeHeight(me.move) - eye) * 0.35; // smooth the crouch transition
+    const [rp, ry] = viewRecoil(me.gun, RIFLE);
+    const p = me.move.pos;
+    camera.position.set(prev.x + (p.x - prev.x) * alpha, prev.y + (p.y - prev.y) * alpha + eye, prev.z + (p.z - prev.z) * alpha);
     camera.rotation.set(pitch + rp * VIEW_RECOIL, yaw - ry * VIEW_RECOIL, 0);
-    for (const b of bots) b.render();
 
-    const speed = Math.hypot(me.vel.x, me.vel.z);
-    const cone = spread(RIFLE, speed, me.onGround, me.crouched, gun.shot);
+    let targetName = "";
+    if (mode?.kind === "range") {
+      for (const b of mode.bots) b.render();
+    } else if (mode?.kind === "online") {
+      const others = mode.net.others();
+      remotes.update(others);
+      // name of whoever is under the crosshair
+      const look = {
+        o: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
+        d: { x: -Math.sin(yaw) * Math.cos(pitch), y: Math.sin(pitch), z: -Math.cos(yaw) * Math.cos(pitch) },
+      };
+      const hit = traceTargets(look, others.filter((x) => x.alive).map((x) => ({ id: x.name, feet: x, crouched: x.crouched })),
+        traceMap(look, MAP, RANGE).t);
+      if (hit) targetName = hit.id;
+      hud.scoreboard(isDown("Tab"), mode.net.latest(), myId);
+    }
+    hud.target(targetName);
+    hud.health(hp);
+    hud.dead(alive ? null : killedBy, respawnIn);
+
+    const cone = spread(RIFLE, Math.hypot(me.move.vel.x, me.move.vel.z), me.move.onGround, me.move.crouched, me.gun.shot);
     const pxPerRad = innerHeight / 2 / Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
     hud.crosshair(3 + Math.min(cone * pxPerRad, 60));
-    hud.ammo(gun.ammo, gun.reserve, gun.reloading > 0 ? 1 - gun.reloading / RIFLE.reloadTime : 0);
+    hud.ammo(me.gun.ammo, me.gun.reserve, me.gun.reloading > 0 ? 1 - me.gun.reloading / RIFLE.reloadTime : 0);
 
     frames++;
     if (performance.now() - fpsSince >= 1000) {
@@ -135,12 +212,22 @@ startLoop(
   },
 );
 
-hud.onPlay(() => {
+const lock = () => void renderer.domElement.requestPointerLock();
+hud.on("online", () => {
   unlockAudio();
-  void renderer.domElement.requestPointerLock();
+  lock(); // must happen inside the click: browsers only grant pointer lock to a user gesture
+  if (!mode) void goOnline();
 });
-renderer.domElement.addEventListener("click", () => { if (!locked()) void renderer.domElement.requestPointerLock(); });
-document.addEventListener("pointerlockchange", () => hud.showStart(!locked()));
+hud.on("range", () => {
+  unlockAudio();
+  lock();
+  goRange();
+});
+renderer.domElement.addEventListener("click", () => { if (mode && !locked()) lock(); });
+document.addEventListener("pointerlockchange", () => {
+  const room = mode?.kind === "online" ? mode.net.room : roomParam;
+  hud.menu(!locked(), { room, playing: mode?.kind });
+});
 
 addEventListener("resize", () => {
   camera.aspect = innerWidth / innerHeight;
@@ -150,19 +237,26 @@ addEventListener("resize", () => {
 });
 
 if (import.meta.env.DEV) {
-  // Hooks for headless checks (scripts/shot.py): pointer lock isn't available there.
+  // Hooks for automated checks: headless browsers have no pointer lock.
   Object.assign(window, {
     __game: {
+      start: () => { if (!mode) goRange(); hud.menu(false); devInput = true; },
+      join: async () => { hud.menu(false); devInput = true; await goOnline(); return myId; },
       look: (y: number, p: number) => { yaw = y; pitch = p; },
       fire: (ticks: number) => { devFire = ticks; },
-      start: () => { hud.showStart(false); devInput = true; },
-      teleport: (x: number, y: number, z: number) => { Object.assign(me.pos, { x, y, z }); Object.assign(prev, me.pos); },
+      teleport: (x: number, y: number, z: number) => {
+        if (mode?.kind === "online") mode.net.send({ type: "dev", teleport: { x, y, z } });
+        Object.assign(me.move.pos, { x, y, z });
+        Object.assign(prev, me.move.pos);
+      },
       state: () => ({
-        pos: me.pos, onGround: me.onGround, yaw, pitch, ammo: gun.ammo, reserve: gun.reserve,
-        speed: Math.hypot(me.vel.x, me.vel.z) / MAX_SPEED,
-        bots: bots.map((b) => ({ hp: b.hp, alive: b.alive })),
-        fps, crouched: me.crouched, locked: locked(),
+        id: myId, pos: me.move.pos, onGround: me.move.onGround, crouched: me.move.crouched, yaw, pitch,
+        ammo: me.gun.ammo, reserve: me.gun.reserve, hp, alive, pending: pending.length,
+        speed: Math.hypot(me.move.vel.x, me.move.vel.z) / MAX_SPEED, locked: locked(), fps,
         drawCalls: renderer.info.render.calls, triangles: renderer.info.render.triangles,
+        bots: mode?.kind === "range" ? mode.bots.map((b) => ({ hp: b.hp, alive: b.alive })) : [],
+        others: mode?.kind === "online" ? mode.net.others().map((o) => ({ id: o.id, name: o.name, x: o.x, z: o.z, hp: o.hp })) : [],
+        rtt: mode?.kind === "online" ? Math.round(mode.net.rtt) : 0,
       }),
     },
   });

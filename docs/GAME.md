@@ -17,9 +17,10 @@ WASD move · mouse look · LMB fire · R reload · Space jump · C crouch · Shi
 ## Roadmap
 1. **Offline shooting range** — FPS controller with CS-like movement (ground accel/friction, air
    strafing, jump, crouch, step-up), blockout map, rifle with fire rate, spray pattern, spread, reload,
-   headshots, target bots, HUD. ← current
-2. **Online deathmatch** — Node.js WebSocket server, rooms by link, server-authoritative movement with
+   headshots, target bots, HUD. ✔
+2. ✔ **Online deathmatch** — Node.js WebSocket server, rooms by link, server-authoritative movement with
    client prediction + reconciliation, interpolated remote players, lag-compensated hitscan.
+   Next for phase 2: public hosting (needs a server account), connection limits per IP.
 3. **Rounds** — teams, round timer, bomb plant/defuse, buy menu, economy, pistol + rifle + AWP-like sniper.
 4. **Polish & launch** — real art (CC0 low-poly), sounds, second map, matchmaking list, itch.io / CrazyGames.
 

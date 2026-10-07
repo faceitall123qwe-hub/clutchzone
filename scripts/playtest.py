@@ -22,7 +22,8 @@ def check(ok, what):
 
 
 with sync_playwright() as pw:
-    browser = pw.chromium.launch(headless=False, args=["--window-size=1600,940"])
+    # Chrome throttles windows hidden behind other windows; the game loop runs on requestAnimationFrame.
+    browser = pw.chromium.launch(headless=False, args=["--window-size=1600,940", "--disable-backgrounding-occluded-windows", "--disable-renderer-backgrounding", "--disable-background-timer-throttling"])
     page = browser.new_page(viewport={"width": 1600, "height": 900})
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
@@ -37,9 +38,9 @@ with sync_playwright() as pw:
 
     print("start screen & pointer lock")
     check(page.is_visible("#start"), "start menu visible before playing")
-    page.click("#play")
+    page.click("#range")
     page.wait_for_timeout(400)
-    check(state()["locked"], "clicking 'Click to play' captures the mouse")
+    check(state()["locked"], "clicking 'Shooting range' captures the mouse")
     check(not page.is_visible("#start"), "menu hides while playing")
 
     print("mouse look")

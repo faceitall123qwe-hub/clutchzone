@@ -14,11 +14,12 @@ export function unlockAudio(): void {
 
 function env(g: GainNode, peak: number, decay: number): void {
   const t = ctx!.currentTime;
-  g.gain.setValueAtTime(peak, t);
+  g.gain.setValueAtTime(Math.max(peak, 0.0002), t);
   g.gain.exponentialRampToValueAtTime(0.0001, t + decay);
 }
 
-export function gunshot(): void {
+/** volume: 1 for our own gun, lower for other players' shots by distance. */
+export function gunshot(volume = 1): void {
   if (!ctx || !noise) return;
   const src = ctx.createBufferSource();
   src.buffer = noise;
@@ -27,7 +28,7 @@ export function gunshot(): void {
   band.type = "lowpass";
   band.frequency.value = 2600;
   const g = ctx.createGain();
-  env(g, 0.5, 0.16);
+  env(g, 0.5 * volume, 0.16);
   src.connect(band).connect(g).connect(ctx.destination);
   src.start();
   src.stop(ctx.currentTime + 0.2);
@@ -36,7 +37,7 @@ export function gunshot(): void {
   thump.frequency.setValueAtTime(140, ctx.currentTime);
   thump.frequency.exponentialRampToValueAtTime(40, ctx.currentTime + 0.1);
   const tg = ctx.createGain();
-  env(tg, 0.5, 0.12);
+  env(tg, 0.5 * volume, 0.12);
   thump.connect(tg).connect(ctx.destination);
   thump.start();
   thump.stop(ctx.currentTime + 0.13);

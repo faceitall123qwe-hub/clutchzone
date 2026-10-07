@@ -37,7 +37,25 @@
     #start button:hover { background: #f0c552; }
     #start dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 18px; margin: 24px 0 0; font-size: 14px; }
     #start dt { opacity: .6; } #start dd { margin: 0; font-weight: 600; }
-    #start .hint { font-size: 13px; opacity: .6; margin: 18px 0 0; }
+    #start .name { display: grid; gap: 6px; font-size: 13px; opacity: .9; margin-bottom: 14px; }
+    #start input { font: 600 16px system-ui; padding: 10px 12px; background: #0e1116; color: #e9e4d8; border: 1px solid #2c3440; }
+    #start button.ghost { margin-top: 10px; background: transparent; color: #e9e4d8; border: 1px solid #2c3440; font-size: 15px; }
+    #start button.ghost:hover { background: #1f2630; }
+    #invite { display: none; gap: 8px; align-items: center; margin-top: 10px; font-size: 13px; }
+    #invite input { flex: 1; font-size: 12px; padding: 8px; min-width: 0; }
+    #invite button { width: auto; padding: 8px 12px; font-size: 13px; }
+    #error { color: #ff7b6b; font-size: 14px; min-height: 0; margin: 10px 0 0; }
+    #target { position: absolute; left: 50%; top: calc(50% + 26px); transform: translateX(-50%); font-weight: 600; font-size: 14px; color: #ffd9d4; }
+    #damage { position: absolute; inset: 0; opacity: 0; background: radial-gradient(ellipse at center, transparent 55%, rgba(200,20,20,.55)); }
+    #dead { position: absolute; inset: 0; display: none; place-content: center; text-align: center; gap: 8px; background: rgba(60,0,0,.25); }
+    #dead b { font-size: 30px; } #dead span { font-size: 16px; opacity: .85; }
+    #board { position: absolute; inset: 0; display: none; place-content: center; }
+    #board table { background: #10141bdd; border-collapse: collapse; min-width: 420px; font-size: 15px; }
+    #board th, #board td { padding: 8px 16px; text-align: left; border-bottom: 1px solid #2c3440; }
+    #board th { font-size: 12px; opacity: .6; text-transform: uppercase; }
+    #board tr.me td { color: #e2b23c; font-weight: 700; }
+    #feed div.mine { border-left-color: #6dff7a; }
+    #hp.low { color: #ff6b5b; }
   </style>
 </head>
 <body>
