@@ -1,7 +1,7 @@
-# Fly.io: one machine in Warsaw. Rooms live in that process's memory, so the game must run on
+# Fly.io: one machine in Frankfurt (Warsaw "waw" is being retired by Fly; fra is ~20-30 ms from Poland). Rooms live in that process's memory, so the game must run on
 # exactly one machine: deploy with `fly deploy --ha=false` and never scale above 1.
 app = "CHANGE-ME"
-primary_region = "waw"
+primary_region = "fra"
 
 [http_service]
   internal_port = 8080
