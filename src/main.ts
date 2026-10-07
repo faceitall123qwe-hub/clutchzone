@@ -51,6 +51,7 @@ let pending: Cmd[] = []; // sent to the server, not yet acknowledged
 const prev = { ...me.move.pos };
 let eye = eyeHeight(me.move);
 let alive = true, hp = 100, respawnIn = 0, killedBy: string | null = null;
+let spawned = false; // first snapshot received
 const names = new Map<number, string>();
 let devFire = 0, devInput = false; // dev hooks for headless checks
 let frames = 0, fps = 0, fpsSince = performance.now();
@@ -91,7 +92,12 @@ function onSnap(s: Snapshot): void {
   pending = pending.filter((c) => c.seq > s.you.lastSeq);
   if (s.you.alive) for (const c of pending) simulate(me, c, shotSeed(myId, c.seq), MAP);
   if (Math.hypot(me.move.pos.x - before.x, me.move.pos.z - before.z) > 2) Object.assign(prev, me.move.pos); // respawn
-  if (!alive && s.you.alive) yaw = Math.atan2(me.move.pos.x, me.move.pos.z); // face the middle of the map
+  // on joining and after every respawn, face the middle of the map instead of the spawn wall
+  if (!spawned || (!alive && s.you.alive)) {
+    yaw = Math.atan2(me.move.pos.x, me.move.pos.z);
+    pitch = 0;
+    spawned = true;
+  }
   alive = s.you.alive;
   hp = s.you.hp;
   respawnIn = s.you.respawnIn;

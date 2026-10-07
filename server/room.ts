@@ -5,6 +5,7 @@ import * as P from "../shared/protocol.ts";
 import { newSim, shotSeed, simulate, traceMap, traceTargets, type Cmd, type Sim } from "../shared/sim.ts";
 import { TICK } from "../shared/constants.ts";
 import { RIFLE } from "../shared/weapons.ts";
+import { BOT_NAMES, BotBrain } from "./bot.ts";
 
 const HISTORY = 64; // ticks of positions kept for lag compensation (~1 s)
 const MAX_REWIND = 30; // never rewind more than 500 ms, however high the ping
@@ -32,9 +33,11 @@ export type Player = {
   queue: { cmd: Cmd; viewTick: number }[];
   budget: number;
   send: (msg: P.ServerMsg | string) => void; // a string is an already serialised message
+  bot?: BotBrain;
 };
 
 const ALL_SPAWNS = [...SPAWNS.attackers, ...SPAWNS.defenders];
+const BOT_FILL = 4; // a public room with one human gets three bots
 
 const clamp = (v: unknown, lo: number, hi: number) =>
   typeof v === "number" && Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : 0;
@@ -66,20 +69,32 @@ export class Room {
   private events: P.GameEvent[] = [];
   private readonly history: Map<number, Pose>[] = [];
   private readonly dev: boolean;
+  /** Public rooms are topped up with bots so a lone visitor has someone to play against. */
+  private readonly withBots: boolean;
 
-  constructor(id: string, dev = false) {
+  constructor(id: string, opts: { dev?: boolean; bots?: boolean } = {}) {
     this.id = id;
-    this.dev = dev;
+    this.dev = opts.dev ?? false;
+    this.withBots = opts.bots ?? false;
   }
 
+  get humans() {
+    let n = 0;
+    for (const p of this.players.values()) if (!p.bot) n++;
+    return n;
+  }
+
+  /** Full counts humans only: a bot gives up its place when someone joins. */
   get full() {
-    return this.players.size >= P.MAX_PLAYERS;
+    return this.humans >= P.MAX_PLAYERS;
   }
 
-  join(name: string, send: (m: P.ServerMsg | string) => void): Player {
+  join(name: string, send: (m: P.ServerMsg | string) => void, bot?: BotBrain): Player {
+    if (!bot) this.balanceBots(1); // make room for the newcomer before they spawn
     const p: Player = {
       id: this.nextId++, name: name.slice(0, 16) || "Player", sim: newSim(), yaw: 0, pitch: 0, hp: P.MAX_HP,
       alive: true, respawnIn: 0, killedBy: null, kills: 0, deaths: 0, ping: 0, lastSeq: 0, queue: [], budget: 2, send,
+      bot,
     };
     this.players.set(p.id, p);
     this.respawn(p);
@@ -93,6 +108,21 @@ export class Room {
     if (!p) return;
     this.players.delete(id);
     this.events.push({ type: "leave", id, name: p.name });
+    if (!p.bot) this.balanceBots();
+  }
+
+  /** Keep humans + bots at BOT_FILL while any human is here; no bots in an empty room. */
+  private balanceBots(incoming = 0): void {
+    if (!this.withBots) return;
+    const humans = this.humans + incoming;
+    const want = humans === 0 ? 0 : Math.max(0, BOT_FILL - humans);
+    const bots = [...this.players.values()].filter((p) => p.bot);
+    for (const b of bots.slice(want)) this.leave(b.id);
+    for (let i = bots.length; i < want; i++) {
+      const taken = new Set([...this.players.values()].map((p) => p.name));
+      const name = BOT_NAMES.find((n) => !taken.has(n)) ?? `Bot ${this.nextId}`;
+      this.join(name, () => {}, new BotBrain());
+    }
   }
 
   onMessage(p: Player, msg: P.ClientMsg): void {
@@ -188,6 +218,12 @@ export class Room {
   step(): void {
     this.tick++;
     for (const p of this.players.values()) {
+      if (p.bot) {
+        const enemies = [...this.players.values()].filter((o) => o !== p && o.alive)
+          .map((o) => ({ id: o.id, feet: o.sim.move.pos, crouched: o.sim.move.crouched }));
+        const cmd = p.bot.think(p.sim.move, p.yaw, p.pitch, p.sim.gun.ammo, enemies, this.tick);
+        this.runCommand(p, { ...cmd, seq: p.lastSeq + 1 }, this.tick);
+      }
       p.budget = Math.min(p.budget + 1, BUDGET_CAP);
       while (p.queue.length && p.budget >= 1) {
         const { cmd, viewTick } = p.queue.shift()!;

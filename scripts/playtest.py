@@ -1,7 +1,7 @@
 """Plays the game in a real (headed) Chromium with the GPU: pointer lock, mouse look, trigger,
 Esc, frame rate and draw calls, plus screenshots from around the map.
 
-    py -3.14 scripts/playtest.py            # needs `npm run dev` running
+    py -3.14 scripts/playtest.py            # needs `npm run dev` and `npm run server:dev` running
 """
 import json
 import sys

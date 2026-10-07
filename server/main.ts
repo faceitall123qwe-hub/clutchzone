@@ -32,14 +32,14 @@ const QUICKPLAY_FILL = 8; // start a new public room once the busiest one reache
 
 function publicRooms() {
   return [...rooms.values()].filter((r) => isPublic(r.id))
-    .map((r) => ({ id: r.id, players: r.players.size, max: MAX_PLAYERS }))
+    .map((r) => ({ id: r.id, players: r.humans, max: MAX_PLAYERS })) // people, not the bots filling in
     .sort((a, b) => b.players - a.players);
 }
 
 const http = createServer((req, res) => {
   const route = (req.url ?? "/").split("?")[0];
   if (route === "/healthz") {
-    const players = [...rooms.values()].reduce((n, r) => n + r.players.size, 0);
+    const players = [...rooms.values()].reduce((n, r) => n + r.humans, 0);
     json(res, { ok: true, rooms: rooms.size, players, tickAvgMs: +(stepTotal / Math.max(stepCount, 1)).toFixed(3),
       tickMaxMs: +stepMax.toFixed(3), memoryMb: Math.round(process.memoryUsage().rss / 1048576) });
     stepTotal = stepCount = stepMax = 0;
@@ -85,7 +85,7 @@ wss.on("connection", (ws, req) => {
   let room = rooms.get(roomId);
   if (!room) {
     if (rooms.size >= MAX_ROOMS) { ws.close(1013, "server full"); return; }
-    rooms.set(roomId, (room = new Room(roomId, DEV)));
+    rooms.set(roomId, (room = new Room(roomId, { dev: DEV, bots: isPublic(roomId) })));
   }
   const send = (m: ServerMsg | string) => {
     if (ws.readyState === ws.OPEN) ws.send(typeof m === "string" ? m : JSON.stringify(m));
@@ -105,7 +105,7 @@ wss.on("connection", (ws, req) => {
   ws.on("close", () => {
     room.leave(player.id);
     console.log(`[${roomId}] -${player.name} (${room.players.size} players)`);
-    if (room.players.size === 0) rooms.delete(roomId);
+    if (room.humans === 0) rooms.delete(roomId);
   });
 });
 
