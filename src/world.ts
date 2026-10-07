@@ -124,7 +124,7 @@ const crate: Paint = (g, s, rnd) => {
 const metal: Paint = (g, s, rnd) => {
   for (let x = 0; x < s; x += 4) {
     const k = 0.75 + 0.25 * Math.sin((x / s) * Math.PI * 16);
-    g.fillStyle = `rgb(${Math.round(92 * k)},${Math.round(116 * k)},${Math.round(122 * k)})`;
+    g.fillStyle = `rgb(${Math.round(120 * k)},${Math.round(146 * k)},${Math.round(150 * k)})`;
     g.fillRect(x, 0, 4, s);
   }
   blotches(g, s, rnd, 8, "rgba(140,80,40,0.3)", s / 10);
@@ -160,7 +160,7 @@ function contactShade(mat: THREE.MeshStandardMaterial): void {
       .replace("#include <common>", "#include <common>\nvarying vec3 vWorldPos;\nvarying vec3 vWorldNormal;")
       .replace("#include <map_fragment>", `#include <map_fragment>
         float side = 1.0 - abs(vWorldNormal.y);
-        diffuseColor.rgb *= mix(1.0, mix(0.35, 1.0, smoothstep(0.0, 1.4, vWorldPos.y)), side);`);
+        diffuseColor.rgb *= mix(1.0, mix(0.5, 1.0, smoothstep(0.0, 0.7, vWorldPos.y)), side);`);
   };
 }
 
