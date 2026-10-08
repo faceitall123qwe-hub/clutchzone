@@ -5,3 +5,5 @@ screenshots/
 .scratch/
 dist-portal/
 *.zip
+marketing/raw/
+marketing/out/

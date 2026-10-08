@@ -43,6 +43,7 @@ export type Player = {
   pid: string; // the player's profile id, for invite links
   use: boolean; // holding E in the last command
   act: number; // seconds spent planting or defusing so far
+  god?: boolean; // dev: takes no damage (filming)
   bot?: BotBrain;
   spot?: Vec3; // bot: where to go or hold this round
 };
@@ -198,6 +199,7 @@ export class Room {
     } else if (msg.type === "dev" && this.dev) {
       if (msg.teleport) Object.assign(p.sim.move.pos, msg.teleport);
       if (msg.yaw !== undefined) p.yaw = msg.yaw;
+      if (msg.god !== undefined) p.god = msg.god;
     }
   }
 
@@ -400,7 +402,7 @@ export class Room {
   }
 
   private damage(by: Player, target: Player, part: Part, w: number): void {
-    if (!target.alive) return;
+    if (!target.alive || target.god) return;
     const damage = Math.round(WEAPONS[w].damage * DAMAGE_SCALE[part]);
     target.hp -= damage;
     this.events.push({ type: "hit", by: by.id, target: target.id, part, damage });

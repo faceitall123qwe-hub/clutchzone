@@ -29,7 +29,7 @@ export type ClientMsg =
   | { type: "input"; cmd: Cmd; viewTick: number } // viewTick: server tick the shooter was looking at
   | { type: "ping"; t: number; rtt?: number } // rtt: the client's last measured round trip, for the scoreboard
   | { type: "look"; look: string } // changed cosmetics in the locker
-  | { type: "dev"; teleport?: Vec3; yaw?: number }; // only honoured by a server started with --dev
+  | { type: "dev"; teleport?: Vec3; yaw?: number; god?: boolean }; // only honoured by a server started with --dev
 
 export type RemotePlayer = {
   id: number; name: string; team: number; look: string; x: number; y: number; z: number; yaw: number; pitch: number;

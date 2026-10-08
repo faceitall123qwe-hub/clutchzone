@@ -19,6 +19,14 @@ export function unlockAudio(): void {
   }
 }
 
+/** Dev: the game's sound as a stream, for recording footage with audio. */
+export function audioTrack(): MediaStreamTrack | null {
+  if (!ctx || !out) return null;
+  const dest = ctx.createMediaStreamDestination();
+  out.connect(dest);
+  return dest.stream.getAudioTracks()[0];
+}
+
 export function setVolume(v: number): void {
   master = v;
   if (out) out.gain.value = v;

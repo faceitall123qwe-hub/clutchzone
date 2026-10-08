@@ -1,5 +1,6 @@
 import * as THREE from "three";
-import { CROUCH_EYE, MAX_SPEED, STAND_EYE, TICK, WALK_FACTOR } from "../shared/constants.ts";
+import { blocked } from "../shared/collision.ts";
+import { CROUCH_EYE, MAX_SPEED, PLAYER_RADIUS, STAND_EYE, STAND_HEIGHT, TICK, WALK_FACTOR } from "../shared/constants.ts";
 import { viewRecoil } from "../shared/gun.ts";
 import { DAMAGE_SCALE, type Part } from "../shared/hitbox.ts";
 import { siteAt, type MapDef } from "../shared/map.ts";
@@ -11,7 +12,7 @@ import {
   cloneSim, gunOf, newSim, RANGE, shotSeed, simulate, traceMap, traceTargets, weaponOf, type Bullet, type Cmd,
 } from "../shared/sim.ts";
 import { spread, WEAPONS } from "../shared/weapons.ts";
-import { actClick, click, explosion, footstep, gunshot, hitSound, levelUpSound, roundEnd, setVolume, unlockAudio } from "./audio";
+import { actClick, audioTrack, click, explosion, footstep, gunshot, hitSound, levelUpSound, roundEnd, setVolume, unlockAudio } from "./audio";
 import { BombView } from "./bomb";
 import { api, PORTAL } from "./config";
 import { effectOf, encodeLook, paintOf } from "./cosmetics";
@@ -131,6 +132,30 @@ let specId: number | null = null, specNext = false, firing = false; // whom we w
 const names = new Map<number, string>(), teams = new Map<number, number>(), looks = new Map<number, string>();
 let devFire = 0, devInput = false; // dev hooks for headless checks
 let devCam: { x: number; y: number; z: number; yaw: number; pitch: number } | null = null;
+let devFov: number | null = null, devNoGun = false; // marketing shots
+let autoAim: { head: boolean; strafe: number } | null = null; // dev: plays itself, smoothly, for gameplay footage
+
+/** Dev autopilot: swing the view onto the nearest enemy in sight like a player would, then fire. */
+function autoPilot(dt: number): { fire: boolean; right: number } {
+  if (!autoAim || mode?.kind !== "online" || !alive) return { fire: false, right: 0 };
+  const team = mode.net.team(), eyeY = me.move.pos.y + eyeHeight(me.move);
+  let best: RemotePlayer | null = null, bestD = Infinity;
+  for (const o of mode.net.others()) {
+    if (!o.alive || o.team === team) continue;
+    const d = { x: o.x - me.move.pos.x, y: o.y + 1.3 - eyeY, z: o.z - me.move.pos.z };
+    const dist = Math.hypot(d.x, d.z);
+    if (dist < bestD && traceMap({ o: { ...me.move.pos, y: eyeY }, d }, currentMap.boxes, 1).t >= 1) { best = o; bestD = dist; }
+  }
+  if (!best) return { fire: false, right: autoAim.strafe };
+  const aimY = best.y + (best.crouched ? 0.9 : autoAim.head ? 1.6 : 1.25);
+  const dx = best.x - me.move.pos.x, dz = best.z - me.move.pos.z;
+  const wantYaw = Math.atan2(-dx, -dz), wantPitch = Math.atan2(aimY - eyeY, Math.hypot(dx, dz));
+  const k = 1 - Math.exp(-dt * 6);
+  yaw += wrap(wantYaw - yaw) * k;
+  pitch += (wantPitch - pitch) * k;
+  const on = Math.abs(wrap(wantYaw - yaw)) < 0.02 && Math.abs(wantPitch - pitch) < 0.02;
+  return { fire: on, right: on ? 0 : autoAim.strafe };
+}
 let frames = 0, fps = 0, fpsSince = performance.now(), lastFrame = performance.now(), longest = 0, longestShown = 0;
 
 const roomParam = new URLSearchParams(location.search).get("room")?.replace(/[^a-z0-9-]/gi, "") || undefined;
@@ -371,6 +396,7 @@ startLoop(
     const idle = { forward: 0, right: 0, jump: false, crouch: false, walk: false, fire: false, reload: false, use: false,
       slot: -1, lastWeapon: false, wheel: 0, scope: false };
     const a = locked() || devInput ? axes() : idle;
+    if (autoAim) { const ap = autoPilot(dt); a.fire = ap.fire; a.right = ap.right; }
 
     if (a.slot >= 0 && a.slot !== wantSlot) { lastSlot = wantSlot; wantSlot = a.slot; }
     if (a.lastWeapon) [wantSlot, lastSlot] = [lastSlot, wantSlot];
@@ -455,7 +481,7 @@ startLoop(
       camera.rotation.set(devCam.pitch, devCam.yaw, 0);
     }
     if (shake > 0) camera.position.add(tmp.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).multiplyScalar(shake * 0.25));
-    const wantFov = watching ? hud.settings.fov : fov();
+    const wantFov = devFov ?? (watching ? hud.settings.fov : fov());
     if (camera.fov !== wantFov) {
       camera.fov = wantFov;
       camera.updateProjectionMatrix();
@@ -555,7 +581,7 @@ startLoop(
     renderer.setRenderTarget(null);
     outline.composite(renderer, camera);
     renderer.clearDepth();
-    if (!(mode?.kind === "online" && !alive)) renderer.render(view.scene, view.camera);
+    if (!(mode?.kind === "online" && !alive) && !devNoGun) renderer.render(view.scene, view.camera);
     if (wantHighlight) { // the drawing buffer is only readable in the same task as the render
       highlight.getContext("2d")!.drawImage(renderer.domElement, 0, 0, highlight.width, highlight.height);
       wantHighlight = false;
@@ -633,6 +659,72 @@ if (import.meta.env.DEV) {
       },
       camera: (x: number, y: number, z: number, yaw: number, pitch: number) => { devCam = { x, y, z, yaw, pitch }; },
       map: (id: string) => setMap(mapById(id)),
+      auto: (on: boolean, head = false, strafe = 0) => { autoAim = on ? { head, strafe } : null; },
+      god: (on: boolean) => { if (mode?.kind === "online") mode.net.send({ type: "dev", god: on }); },
+      /** Teleport to a spot dist m from the nearest enemy with a clear view of them (behind them if possible),
+       * facing a little off to one side, so the autopilot's swing onto the target is on camera. */
+      ambush: (dist: number, offset = 0.5): boolean => {
+        if (mode?.kind !== "online") return false;
+        const team = mode.net.team();
+        const foes = mode.net.others().filter((o) => o.alive && o.team !== team)
+          .sort((a, b) => Math.hypot(a.x - me.move.pos.x, a.z - me.move.pos.z) - Math.hypot(b.x - me.move.pos.x, b.z - me.move.pos.z));
+        for (const f of foes)
+          for (let i = 0; i < 16; i++) {
+            const ang = f.yaw + Math.PI + ((i % 2 ? 1 : -1) * Math.ceil(i / 2) * Math.PI) / 8; // start right behind them
+            const x = f.x - Math.sin(ang) * dist, z = f.z - Math.cos(ang) * dist;
+            if (Math.abs(x) > currentMap.half - 1 || Math.abs(z) > currentMap.half - 1) continue;
+            const feet = { x, y: f.y, z };
+            if (blocked(feet, PLAYER_RADIUS, STAND_HEIGHT, currentMap.boxes)) continue;
+            const d = { x: f.x - x, y: 0, z: f.z - z };
+            if (traceMap({ o: { x, y: f.y + 1.5, z }, d }, currentMap.boxes, 1).t < 1) continue;
+            mode.net.send({ type: "dev", teleport: feet });
+            Object.assign(me.move.pos, feet);
+            Object.assign(prev, me.move.pos);
+            yaw = Math.atan2(-d.x, -d.z) + (Math.random() < 0.5 ? offset : -offset);
+            pitch = 0;
+            return true;
+          }
+        return false;
+      },
+      record: (fps = 30, mbps = 12) => {
+        const stream = renderer.domElement.captureStream(fps);
+        unlockAudio();
+        const sound = audioTrack();
+        if (sound) stream.addTrack(sound);
+        const rec = new MediaRecorder(stream, { mimeType: "video/webm;codecs=vp9,opus", videoBitsPerSecond: mbps * 1e6 });
+        const chunks: Blob[] = [];
+        rec.ondataavailable = (e) => chunks.push(e.data);
+        rec.start(500);
+        const started = performance.now();
+        Object.assign(window, { __rec: { rec, chunks, started } });
+        return started;
+      },
+      stopRecording: async (): Promise<string> => {
+        const { rec, chunks } = (window as unknown as { __rec: { rec: MediaRecorder; chunks: Blob[] } }).__rec;
+        await new Promise((ok) => { rec.onstop = ok; rec.stop(); });
+        const buf = await new Blob(chunks, { type: "video/webm" }).arrayBuffer();
+        let bin = "";
+        const bytes = new Uint8Array(buf);
+        for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+        return btoa(bin);
+      },
+      // store covers and trailer frames: pose soldiers, hide the interface, show only the title
+      stage: async (poses: import("./stage").Pose[], beams: number[][] = []) => {
+        const { stage } = await import("./stage");
+        stage(scene, poses, beams.map(([a, b, c, d, e, f]) => [new THREE.Vector3(a, b, c), new THREE.Vector3(d, e, f)]));
+      },
+      clean: (fovDeg: number | null) => {
+        devFov = fovDeg;
+        devNoGun = true;
+        for (const id of ["hud", "start"]) document.getElementById(id)!.style.display = "none";
+      },
+      title: (sizePx: number, topPx: number) => {
+        document.getElementById("covertitle")?.remove();
+        document.body.insertAdjacentHTML("beforeend", `<div id="covertitle" style="position:fixed;left:0;right:0;top:${topPx}px;` +
+          `text-align:center;font:400 ${sizePx}px 'Lilita One',system-ui;color:#ffd23f;paint-order:stroke fill;` +
+          `-webkit-text-stroke:${Math.round(sizePx / 7)}px #14161c;text-shadow:0 ${Math.round(sizePx / 14)}px 0 #14161c;` +
+          `letter-spacing:.02em;pointer-events:none">CLUTCHZONE</div>`);
+      },
       look: (y: number, p: number) => { yaw = y; pitch = p; },
       fire: (ticks: number) => { devFire = ticks; },
       weapon: (slot: number) => { wantSlot = slot; },
