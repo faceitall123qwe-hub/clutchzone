@@ -2,6 +2,7 @@ import * as THREE from "three";
 import type { Vec3 } from "../shared/collision.ts";
 import { TARGET_OUTFIT } from "./models";
 import { stance } from "./remote";
+import { toon } from "./toon";
 
 /** Practice targets: walk back and forth between two points, die, respawn. No shooting back yet. */
 export class Bot {
@@ -11,7 +12,7 @@ export class Bot {
   readonly mesh = new THREE.Group();
   private t = Math.random() * 10;
   private flash = 0;
-  private readonly mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.75 });
+  private readonly mat = toon({ vertexColors: true });
   private readonly a: Vec3;
   private readonly b: Vec3;
   private readonly speed: number;

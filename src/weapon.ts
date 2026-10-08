@@ -1,6 +1,7 @@
 import * as THREE from "three";
-import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
+import { starTexture } from "./effects";
 import { gunKit, handsKit, Kit, viewMaterials, type GunSpec } from "./models";
+import { addHull } from "./toon";
 
 type ViewGun = { group: THREE.Group; spec: GunSpec; rest: THREE.Vector3; kick: { up: number; back: number }; inward: number };
 
@@ -22,43 +23,29 @@ export class ViewModel {
   private sway = new THREE.Vector2();
   private readonly v = new THREE.Vector3();
 
-  /** renderer: to pre-filter a studio environment, so the gun's metal has something to reflect. */
-  constructor(renderer: THREE.WebGLRenderer) {
-    const pmrem = new THREE.PMREMGenerator(renderer);
-    this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-    this.scene.environmentIntensity = 0.7;
-    pmrem.dispose();
+  constructor() {
     const mats = viewMaterials();
     this.guns = REST.map((rest, id) => {
       const k = new Kit();
       const spec = gunKit(id, k);
       handsKit(spec, k);
       const group = k.build(mats);
+      for (const part of group.children) addHull(part as THREE.Mesh, 0.0022); // the world gets its outlines in a pass
       group.visible = id === 0;
       this.scene.add(group);
       return { group, spec, rest, kick: KICK[id], inward: INWARD[id] };
     });
 
-    const glow = document.createElement("canvas");
-    glow.width = glow.height = 64;
-    const g = glow.getContext("2d")!;
-    const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
-    grad.addColorStop(0, "rgba(255,240,200,1)");
-    grad.addColorStop(0.3, "rgba(255,170,60,0.8)");
-    grad.addColorStop(1, "rgba(255,120,20,0)");
-    g.fillStyle = grad;
-    g.fillRect(0, 0, 64, 64);
     this.flash = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.22, 0.22),
-      new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(glow), transparent: true,
-        blending: THREE.AdditiveBlending, depthWrite: false }),
+      new THREE.PlaneGeometry(0.26, 0.26),
+      new THREE.MeshBasicMaterial({ map: starTexture(), transparent: true, depthWrite: false }),
     );
     this.flash.visible = false;
     this.guns[0].group.add(this.flash, this.flashLight);
 
-    this.scene.add(new THREE.HemisphereLight(0xffffff, 0x554433, 2));
-    const key = new THREE.DirectionalLight(0xffffff, 1.5);
-    key.position.set(1, 2, 1);
+    this.scene.add(new THREE.HemisphereLight(0xffffff, 0x8a7a6a, 1.6));
+    const key = new THREE.DirectionalLight(0xffffff, 2.2);
+    key.position.set(1, 2, 1.5);
     this.scene.add(key);
   }
 

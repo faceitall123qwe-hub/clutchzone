@@ -77,7 +77,12 @@ every map (spawns free, no spawn-to-spawn sightline, both sites reachable, defen
 - Hits are decided on the server, rewinding other players to what the shooter saw (lag compensation).
 
 ## Art style
-Phase 1: readable blockout (flat-coloured boxes). Later: CC0 low-poly (Kenney, Quaternius).
+Cartoon (Tim, 2026-10-08: "completely other graphics, not CS-like" -> chose toon over neon, Superhot and voxel):
+saturated flat colours, light in three hard bands (MeshToonMaterial), crisp shadows, thick dark outlines,
+puffy low-poly clouds, star-shaped muzzle flashes, chunky "Lilita One" lettering with a dark stroke in the HUD.
+Outlines: the world is rendered into a target and one full-screen pass draws ink where the second
+difference of 1/depth is large (silhouettes and the edges between faces; zero on any flat surface).
+The first-person gun, drawn in its own pass, gets inverted-hull outlines instead.
 
 ## Decisions
 | Date | Decision | Why |
@@ -102,6 +107,8 @@ Phase 1: readable blockout (flat-coloured boxes). Later: CC0 low-poly (Kenney, Q
 | 2026-10-07 | 4 v 4 in public rooms, first to 7 rounds, sides swap after a match | The 48 m map gets crowded with 5 v 5; short matches suit drop-in browser play |
 | 2026-10-07 | Bots stop before firing and chase an enemy who ducks out of sight for 2.5 s | Moving rifles miss; without the chase they walked off mid-fight |
 | 2026-10-07 | Lag compensation never rewinds past the newest recorded tick | Asking for the current tick read the ring buffer's 64-tick-old slot: bots shot at where players were a second ago |
+| 2026-10-08 | Toon art style with outlines from depth in one full-screen pass | Tim's choice; one pass costs the same whatever is on screen, no extra draw calls per object |
+| 2026-10-08 | World target without MSAA, 8-bit sRGB colour | With 4x MSAA in half float the laptop fell to 40-47 fps; now 60 again, and the outlines cover the jaggies |
 | 2026-10-08 | Maps are data (boxes, spawns, sites, decor, theme); the theme picks textures, sky and light | One renderer and one server for every map; new maps need no code, only boxes |
 | 2026-10-08 | Bots plant at least 1 m inside a site; site areas reach the walls | A bot stopping 0.6 m from a spot at a site's edge was outside the site and never planted |
 | 2026-10-08 | All shaders compiled when a map loads (hidden effects made visible for the compile) | The first tracer or flash compiling mid-fight froze the game for 100-200 ms on Windows |

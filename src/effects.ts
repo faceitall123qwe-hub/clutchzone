@@ -76,7 +76,7 @@ export class Tracers {
   private readonly b = new THREE.Vector3();
 
   constructor(scene: THREE.Scene) {
-    const bright = new LineMaterial({ color: 0xffe2a0, linewidth: 2.4, transparent: true, depthWrite: false,
+    const bright = new LineMaterial({ color: 0xffe066, linewidth: 3.2, transparent: true, depthWrite: false,
       blending: THREE.AdditiveBlending });
     this.materials.push(bright);
     for (let i = 0; i < 24; i++) {
@@ -183,7 +183,8 @@ export class Particles {
     this.next = (this.next + 1) % MAX_PARTICLES;
     this.pos.set([p.x, p.y, p.z], i * 3);
     this.vel.set([v.x, v.y, v.z], i * 3);
-    this.col.set([...rgb, 1], i * 4);
+    // colours are given as on screen; the scene is drawn in linear light and converted at the end
+    this.col.set([rgb[0] ** 2.2, rgb[1] ** 2.2, rgb[2] ** 2.2, 1], i * 4);
     this.size[i] = size;
     this.life[i] = this.maxLife[i] = life;
     this.grow[i] = grow;
@@ -261,23 +262,34 @@ export class Particles {
   }
 }
 
+/** A cartoon muzzle flash: an eight-pointed star, white-yellow inside, orange at the tips. */
+export function starTexture(): THREE.CanvasTexture {
+  const c = document.createElement("canvas");
+  c.width = c.height = 128;
+  const g = c.getContext("2d")!;
+  const star = (r1: number, r2: number, color: string) => {
+    g.beginPath();
+    for (let i = 0; i < 16; i++) {
+      const a = (i / 16) * Math.PI * 2, r = i % 2 ? r2 : r1;
+      g.lineTo(64 + Math.cos(a) * r, 64 + Math.sin(a) * r);
+    }
+    g.closePath();
+    g.fillStyle = color;
+    g.fill();
+  };
+  star(62, 26, "#ff8a1f");
+  star(46, 20, "#ffd23f");
+  star(26, 12, "#fffbe6");
+  return new THREE.CanvasTexture(c);
+}
+
 /** Other players' muzzle flashes: additive sprites. */
 export class Flashes {
   private readonly pool: { sprite: THREE.Sprite; life: number }[] = [];
   private next = 0;
 
   constructor(scene: THREE.Scene) {
-    const c = document.createElement("canvas");
-    c.width = c.height = 64;
-    const g = c.getContext("2d")!;
-    const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
-    grad.addColorStop(0, "rgba(255,240,200,1)");
-    grad.addColorStop(0.35, "rgba(255,170,60,0.7)");
-    grad.addColorStop(1, "rgba(255,120,20,0)");
-    g.fillStyle = grad;
-    g.fillRect(0, 0, 64, 64);
-    const mat = new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), blending: THREE.AdditiveBlending,
-      depthWrite: false, transparent: true });
+    const mat = new THREE.SpriteMaterial({ map: starTexture(), depthWrite: false, transparent: true });
     for (let i = 0; i < 10; i++) {
       const sprite = new THREE.Sprite(mat);
       sprite.visible = false;

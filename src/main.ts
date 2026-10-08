@@ -21,6 +21,7 @@ import { startLoop } from "./loop";
 import { Net } from "./net";
 import { Radar } from "./radar";
 import { Remotes } from "./remote";
+import { Outline } from "./toon";
 import { ViewModel } from "./weapon";
 import { buildWorld, type World } from "./world";
 
@@ -31,8 +32,7 @@ const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.shadowMap.type = THREE.PCFShadowMap; // crisp cartoon shadows
 renderer.autoClear = false;
 renderer.info.autoReset = false; // count the world and the gun pass together
 document.body.append(renderer.domElement);
@@ -42,7 +42,8 @@ let currentMap: MapDef = OUTPOST;
 let world: World = buildWorld(scene, currentMap);
 const camera = new THREE.PerspectiveCamera(80, innerWidth / innerHeight, 0.05, 250);
 camera.rotation.order = "YXZ";
-const view = new ViewModel(renderer);
+const view = new ViewModel();
+const outline = new Outline();
 view.resize(innerWidth / innerHeight);
 const hud = new Hud();
 const decals = new Decals(scene);
@@ -61,7 +62,9 @@ function warmUp(): void {
   const hidden: THREE.Object3D[] = [];
   for (const root of [scene, view.scene])
     root.traverse((o) => { if (!o.visible) { hidden.push(o); o.visible = true; } });
+  renderer.setRenderTarget(outline.target);
   renderer.compile(scene, camera);
+  renderer.setRenderTarget(null);
   renderer.compile(view.scene, view.camera);
   for (const o of hidden) o.visible = false;
 }
@@ -467,8 +470,12 @@ startLoop(
       fpsSince = performance.now();
     }
     renderer.info.reset();
+    // the world goes into a target first, so the outline pass can read its depth
+    renderer.setRenderTarget(outline.target);
     renderer.clear();
     renderer.render(scene, camera);
+    renderer.setRenderTarget(null);
+    outline.composite(renderer, camera);
     renderer.clearDepth();
     if (!(mode?.kind === "online" && !alive)) renderer.render(view.scene, view.camera);
   },
@@ -520,6 +527,7 @@ function resize(): void {
   camera.updateProjectionMatrix();
   view.resize(camera.aspect);
   renderer.setSize(innerWidth, innerHeight);
+  outline.setSize(renderer);
   particles.setView(innerHeight, camera.fov);
   glow.setView(innerHeight, camera.fov);
   tracers.setResolution(innerWidth, innerHeight);

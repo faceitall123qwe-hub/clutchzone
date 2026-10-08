@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { toon } from "./toon";
 
 /** Procedural low-poly models. Parts are coloured per vertex and merged per surface type, so a
  * whole gun or soldier costs one or two draw calls. */
@@ -94,12 +95,12 @@ export class Kit {
 }
 
 export const viewMaterials = (): Record<Surface, THREE.Material> => ({
-  metal: new THREE.MeshStandardMaterial({ vertexColors: true, metalness: 0.55, roughness: 0.42 }),
-  matte: new THREE.MeshStandardMaterial({ vertexColors: true, metalness: 0, roughness: 0.75 }),
-  glass: new THREE.MeshStandardMaterial({ vertexColors: true, metalness: 0.2, roughness: 0.05, emissive: 0x112233 }),
+  metal: toon({ vertexColors: true }),
+  matte: toon({ vertexColors: true }),
+  glass: toon({ vertexColors: true, emissive: 0x3a88c8 }),
 });
 
-const GUNMETAL = 0x454a52, DARK = 0x2a2d32, WOOD = 0x8a5530, OLIVE = 0x5f6a44;
+const GUNMETAL = 0x5a6a80, DARK = 0x2e3442, WOOD = 0xd2762e, OLIVE = 0x8cc63f;
 
 /** Where the hands hold a gun, relative to its origin (the middle of the receiver). */
 export type GunSpec = { muzzle: THREE.Vector3; rightHand: V3; leftHand: V3 };
@@ -163,7 +164,7 @@ export function gunKit(id: number, k = new Kit()): GunSpec {
   return { muzzle: new THREE.Vector3(0, 0.01, -0.79), rightHand: [0, -0.1, 0.1], leftHand: [0, -0.04, -0.32] };
 }
 
-const GLOVE = 0x34322e, SLEEVE = 0x6f6248;
+const GLOVE = 0x2b2d36, SLEEVE = 0xd9a95c;
 
 /** First-person hands and forearms reaching the gun from outside the screen. */
 export function handsKit(spec: GunSpec, k: Kit): void {
@@ -178,12 +179,12 @@ export function handsKit(spec: GunSpec, k: Kit): void {
 
 export type Outfit = { uniform: number; vest: number; pants: number; helmet: number; skin: number };
 export const OUTFITS: Outfit[] = [
-  { uniform: 0xa08a64, vest: 0x5d5340, pants: 0x7d6b4f, helmet: 0x6b5f45, skin: 0xd9a77e },
-  { uniform: 0x5a6878, vest: 0x2f3742, pants: 0x48525e, helmet: 0x3a434e, skin: 0xb98a63 },
+  { uniform: 0xf2a33a, vest: 0xb4561e, pants: 0x6b4428, helmet: 0xf07c22, skin: 0xffc79a },
+  { uniform: 0x4d9cf0, vest: 0x1f4f9a, pants: 0x283a5c, helmet: 0x2f7fe0, skin: 0xe8b088 },
 ];
 
 /** Shooting-range targets: hard to miss. */
-export const TARGET_OUTFIT: Outfit = { uniform: 0xb8433a, vest: 0x7a2a24, pants: 0x3d4652, helmet: 0x8f2f28, skin: 0xd9a77e };
+export const TARGET_OUTFIT: Outfit = { uniform: 0xf0483c, vest: 0x9c1f1a, pants: 0x3a4152, helmet: 0xc8241c, skin: 0xffc79a };
 
 /** Soldier without legs, fitted to the hitboxes (feet at 0, facing -Z). h: standing or crouched height.
  * Returns the shoulder height, where the arms and gun pivot with the view pitch. */

@@ -3,6 +3,7 @@ import { CROUCH_HEIGHT, STAND_HEIGHT } from "../shared/constants.ts";
 import type { RemotePlayer } from "../shared/protocol.ts";
 import { WEAPONS } from "../shared/weapons.ts";
 import { armsKit, bombKit, Kit, legKit, OUTFITS, torsoKit, type Outfit } from "./models";
+import { toon } from "./toon";
 
 /** One stance (standing or crouched): torso, legs that swing from the hips, and arms + gun that tilt
  * with the view pitch around the shoulders. Sized to the hitboxes, so what you see is what you hit. */
@@ -50,7 +51,7 @@ export function stance(o: Outfit, crouched: boolean, mat: THREE.Material): Stanc
 }
 
 type View = {
-  root: THREE.Group; stand: Stance; crouch: Stance; mat: THREE.MeshStandardMaterial; team: number;
+  root: THREE.Group; stand: Stance; crouch: Stance; mat: THREE.MeshToonMaterial; team: number;
   weapon: number; alive: boolean; dying: number; phase: number; last: THREE.Vector3; hurt: number;
 };
 
@@ -68,7 +69,7 @@ export class Remotes {
   }
 
   private create(p: RemotePlayer): View {
-    const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.75, metalness: 0.05 });
+    const mat = toon({ vertexColors: true });
     const o = OUTFITS[p.team];
     const v: View = { root: new THREE.Group(), stand: stance(o, false, mat), crouch: stance(o, true, mat), mat, team: p.team,
       weapon: 0, alive: p.alive, dying: 0, phase: 0, last: new THREE.Vector3(p.x, p.y, p.z), hurt: 0 };
