@@ -51,6 +51,7 @@ export type GameEvent =
  * the same clock. The bomb is with `carrier`, or lies at `pos` (dropped or planted).
  */
 export type RoundState = {
+  map: string; // MapDef id; changes after a match
   phase: "warmup" | "freeze" | "live" | "over" | "matchover";
   endsAt: number; // when this phase ends; while the bomb is planted, when it explodes
   round: number;

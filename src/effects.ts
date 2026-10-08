@@ -31,6 +31,11 @@ export class Decals {
     scene.add(this.mesh);
   }
 
+  clear(): void {
+    this.mesh.count = 0;
+    this.next = 0;
+  }
+
   add(point: THREE.Vector3, normal: THREE.Vector3): void {
     const d = this.dummy;
     d.position.copy(point).addScaledVector(normal, 0.002);

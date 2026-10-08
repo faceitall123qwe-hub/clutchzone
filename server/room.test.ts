@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { TICK } from "../shared/constants.ts";
-import { MAP } from "../shared/map.ts";
+import { OUTPOST } from "../shared/maps/outpost.ts";
 import * as P from "../shared/protocol.ts";
 import { ATK, DEF, decodePlayers, type RosterEntry, type ServerMsg } from "../shared/protocol.ts";
 import { cloneSim, gunOf, shotSeed, simulate, type Cmd } from "../shared/sim.ts";
@@ -188,7 +188,7 @@ test("client prediction replays to exactly the server's state", () => {
       yaw: Math.sin(i / 10), pitch: 0.1, jump: i % 50 === 0, crouch: i > 90, fire: i % 3 === 0,
       slot: i < 40 ? 0 : i < 80 ? 1 : 2, aim: i > 100, use: i % 30 < 5 });
   for (const c of cmds) {
-    simulate(predicted, c, shotSeed(a.id, c.seq), MAP); // what the client does locally
+    simulate(predicted, c, shotSeed(a.id, c.seq), OUTPOST.boxes); // what the client does locally
     room.onMessage(a, { type: "input", cmd: c, viewTick: room.tick });
     room.step();
   }
@@ -383,7 +383,7 @@ test("when the time runs out without a plant, the defenders win", () => {
   assert.deepEqual([room.round.winner, room.round.reason], [DEF, "Time ran out"]);
 });
 
-test("late joiners watch until the next round; first to 7 wins, then sides swap", () => {
+test("late joiners watch until the next round; first to 7 wins, then sides swap and the map changes", () => {
   const { room, join } = setup();
   const a = join("a", ATK), b = join("b", DEF);
   live(room);
@@ -401,6 +401,8 @@ test("late joiners watch until the next round; first to 7 wins, then sides swap"
   secs(room, P.MATCH_END_TIME + 0.1);
   assert.deepEqual([room.round.phase, room.round.round, room.round.score], ["freeze", 1, [0, 0]]);
   assert.deepEqual([a.team, b.team, late.team, late.alive], [DEF, ATK, DEF, true]);
+  assert.deepEqual([room.map.id, room.round.map], ["dockyard", "dockyard"], "the next map in the rotation");
+  assert.ok(Math.abs(a.sim.move.pos.z) > 20 && Math.abs(a.sim.move.pos.z) < 27, "spawned on the new map");
 });
 
 test("a shot judged at the present tick uses the newest positions, not ones a second old", () => {

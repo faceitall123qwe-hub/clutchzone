@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { rayBox } from "../shared/collision.ts";
 import { TICK } from "../shared/constants.ts";
-import { MAP } from "../shared/map.ts";
+import { OUTPOST } from "../shared/maps/outpost.ts";
 import { ATK, DEF } from "../shared/protocol.ts";
 import { Room, type Player } from "./room.ts";
 
@@ -67,7 +67,7 @@ test("bots don't see or shoot through walls", () => {
     place(h, -9.5, 0);
   }
   const eye = { x: -9.5, y: 1.62, z: 10 };
-  const blocked = MAP.some((b) => { const r = rayBox(eye, { x: 0, y: 0, z: -10 }, b, 1); return r !== null && r.t < 1; });
+  const blocked = OUTPOST.boxes.some((b) => { const r = rayBox(eye, { x: 0, y: 0, z: -10 }, b, 1); return r !== null && r.t < 1; });
   assert.ok(blocked, "test setup: the wall really is in between");
   assert.equal(h.hp, 100);
 });

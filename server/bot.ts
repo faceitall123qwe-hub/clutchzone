@@ -1,40 +1,43 @@
 import type { Vec3 } from "../shared/collision.ts";
 import { MAX_SPEED, TICK } from "../shared/constants.ts";
-import { MAP } from "../shared/map.ts";
+import type { MapDef, Rect } from "../shared/map.ts";
 import { eyeHeight, type PlayerState } from "../shared/movement.ts";
 import { traceMap, type Cmd } from "../shared/sim.ts";
 import { buildNav, findPath, nearestNode, type NavGraph } from "./nav.ts";
 
 export const BOT_NAMES = ["Bot Ada", "Bot Bruno", "Bot Cora", "Bot Dex", "Bot Edda", "Bot Finn", "Bot Gus", "Bot Hela"];
 
-let nav: NavGraph | null = null;
-let goals: number[] = [];
-/** The nav graph is built once per process (~0.5 s) the first time a bot needs it. */
-function graph(): NavGraph {
+type Nav = NavGraph & { goals: number[] };
+const navs = new Map<string, Nav>();
+/** A map's nav graph is built once per process (~0.5 s) the first time a bot needs it. */
+export function graphOf(map: MapDef): Nav {
+  let nav = navs.get(map.id);
   if (nav) return nav;
-  nav = buildNav(MAP);
+  const g = buildNav(map);
   // goals only in the biggest connected area, so bots never pick a spot they can't reach
   const seen = new Set<number>(), comps: number[][] = [];
-  for (let s = 0; s < nav.nodes.length; s++) {
+  for (let s = 0; s < g.nodes.length; s++) {
     if (seen.has(s)) continue;
     const comp = [s], q = [s];
     seen.add(s);
-    while (q.length) for (const nb of nav.links[q.shift()!]) if (!seen.has(nb)) { seen.add(nb); comp.push(nb); q.push(nb); }
+    while (q.length) for (const nb of g.links[q.shift()!]) if (!seen.has(nb)) { seen.add(nb); comp.push(nb); q.push(nb); }
     comps.push(comp);
   }
-  goals = comps.sort((a, b) => b.length - a.length)[0];
+  nav = { ...g, goals: comps.sort((a, b) => b.length - a.length)[0] };
+  navs.set(map.id, nav);
   return nav;
 }
 
 /** Walkable spots (in the part of the map every other spot can be reached from) inside a rectangle
- * on the ground plan, or within r of a point. */
-export function spotsIn(min: readonly number[], max: readonly number[]): Vec3[] {
-  const g = graph();
-  return goals.map((i) => g.nodes[i]).filter((n) => n.x >= min[0] && n.x <= max[0] && n.z >= min[1] && n.z <= max[1]);
+ * on the ground plan, at least margin metres from its edges, or within r of a point. */
+export function spotsIn(map: MapDef, r: Rect, margin = 0): Vec3[] {
+  const g = graphOf(map);
+  return g.goals.map((i) => g.nodes[i]).filter((n) => n.x >= r.min[0] + margin && n.x <= r.max[0] - margin &&
+    n.z >= r.min[1] + margin && n.z <= r.max[1] - margin);
 }
-export function spotsNear(p: Vec3, r: number): Vec3[] {
-  const g = graph();
-  return goals.map((i) => g.nodes[i]).filter((n) => Math.hypot(n.x - p.x, n.z - p.z) <= r);
+export function spotsNear(map: MapDef, p: Vec3, r: number): Vec3[] {
+  const g = graphOf(map);
+  return g.goals.map((i) => g.nodes[i]).filter((n) => Math.hypot(n.x - p.x, n.z - p.z) <= r);
 }
 
 export type Seen = { id: number; feet: Vec3; crouched: boolean };
@@ -83,10 +86,10 @@ export class BotBrain {
     this.stuckFor = 0;
   }
 
-  think(me: PlayerState, yaw: number, pitch: number, ammo: number, enemies: Seen[], tick: number,
+  think(map: MapDef, me: PlayerState, yaw: number, pitch: number, ammo: number, enemies: Seen[], tick: number,
         obj: Objective = NO_OBJECTIVE): Omit<Cmd, "seq"> {
     const eye = { x: me.pos.x, y: me.pos.y + eyeHeight(me), z: me.pos.z };
-    if (tick % 3 === 0) this.perceive(eye, yaw, enemies);
+    if (tick % 3 === 0) this.perceive(map, eye, yaw, enemies);
     const target = enemies.find((e) => e.id === this.target);
     const cmd: Omit<Cmd, "seq"> = { forward: 0, right: 0, yaw, pitch, jump: false, crouch: false, walk: false,
       fire: false, reload: false, slot: 0, aim: false, use: false };
@@ -126,7 +129,8 @@ export class BotBrain {
       return cmd;
     }
 
-    const g = graph();
+    const g = graphOf(map);
+    const goals = g.goals;
     // an enemy just ducked out of sight: go after them for a moment before getting back to the job
     const recent = this.lastSeen !== null && tick - this.lastSeenTick < 150;
     if (recent && !this.chasing) {
@@ -188,7 +192,7 @@ export class BotBrain {
     return cmd;
   }
 
-  private perceive(eye: Vec3, yaw: number, enemies: Seen[]): void {
+  private perceive(map: MapDef, eye: Vec3, yaw: number, enemies: Seen[]): void {
     let best: Seen | null = null, bestD = Infinity;
     for (const e of enemies) {
       const dx = e.feet.x - eye.x, dz = e.feet.z - eye.z;
@@ -198,7 +202,7 @@ export class BotBrain {
       if (angle > FOV && d > 3) continue; // behind us, unless they're right next to us
       const chestY = e.feet.y + (e.crouched ? 0.8 : 1.2);
       const dir = { x: dx, y: chestY - eye.y, z: dz };
-      if (traceMap({ o: eye, d: dir }, MAP, 1).t < 1) continue; // a wall in the way (t is in units of dir)
+      if (traceMap({ o: eye, d: dir }, map.boxes, 1).t < 1) continue; // a wall in the way (t is in units of dir)
       if (d < bestD) { bestD = d; best = e; }
     }
     const id = best?.id ?? null;

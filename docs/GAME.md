@@ -1,7 +1,7 @@
 # Game design
 
 ## Concept
-- Name: **Clutchzone** (domain clutchzone.pro at OVH, bought 2026-10-07). First map: Outpost.
+- Name: **Clutchzone** (domain clutchzone.pro at OVH, bought 2026-10-07).
 - Genre: competitive multiplayer first-person shooter in the browser, in the spirit of Counter-Strike.
 - Pitch: open a link, you're in a 5v5-style tactical shooter in seconds — no install, no account.
 - References: Counter-Strike 1.6 / CS2 (movement, rounds, economy), Krunker.io (browser delivery).
@@ -14,6 +14,18 @@ round (eliminate or bomb) → earn money → next round. A match is first to N r
 ## Controls
 WASD move · mouse look · LMB fire · RMB scope (sniper) · R reload · Space jump · C crouch
 · Shift walk (quiet, accurate) · 1/2/3, Q, wheel weapons · E (hold) plant / defuse · Tab scoreboard · later: B buy.
+
+## Maps
+All maps: attackers spawn in the south (+Z), defenders in the north, bomb sites A (east) and B (west).
+Rooms rotate Outpost → Dockyard → Frostbite after every match; private rooms pick the first map in the menu,
+public rooms start on a random one. A map is data in `shared/maps/*.ts`; `server/maps.test.ts` checks
+every map (spawns free, no spawn-to-spawn sightline, both sites reachable, defenders arrive first, bots plant and defuse).
+
+| Map | Size | Theme | Character |
+|---|---|---|---|
+| Outpost | 48 × 48 m | desert | two buildings, three lanes; A on a raised platform, B among crates |
+| Dockyard | 56 × 56 m | harbour | container alley in mid; B inside a roofed warehouse with two doors; A an open yard with a loading dock and a container stack you can climb from crates |
+| Frostbite | 52 × 52 m | snow | church with a tower in the middle, cabins and pines; B the sawmill with log piles, A the market square with a stage; 1 m fences you can jump |
 
 ## Weapons
 | Slot | Name | Damage (head ×4) | Fire | Magazine | Notes |
@@ -52,6 +64,7 @@ WASD move · mouse look · LMB fire · RMB scope (sniper) · R reload · Space j
    - [x] HUD: score and timer bar, alive counts, round result, plant/defuse progress, hints, radar, team scoreboard
    - [x] Bots play the objective: attackers take the bomb to a site and plant, pick it up when dropped;
          defenders hold both sites and defuse
+   - [x] More maps: Dockyard and Frostbite, rotation after each match, map choice for private rooms
    - [ ] Economy and buy menu (money for kills and rounds, armour, grenades), pistol rounds
    - [ ] Smoke, flash and frag grenades
 4. **Polish & launch** — real art (CC0 low-poly), sounds, second map, matchmaking list, itch.io / CrazyGames.
@@ -89,4 +102,7 @@ Phase 1: readable blockout (flat-coloured boxes). Later: CC0 low-poly (Kenney, Q
 | 2026-10-07 | 4 v 4 in public rooms, first to 7 rounds, sides swap after a match | The 48 m map gets crowded with 5 v 5; short matches suit drop-in browser play |
 | 2026-10-07 | Bots stop before firing and chase an enemy who ducks out of sight for 2.5 s | Moving rifles miss; without the chase they walked off mid-fight |
 | 2026-10-07 | Lag compensation never rewinds past the newest recorded tick | Asking for the current tick read the ring buffer's 64-tick-old slot: bots shot at where players were a second ago |
+| 2026-10-08 | Maps are data (boxes, spawns, sites, decor, theme); the theme picks textures, sky and light | One renderer and one server for every map; new maps need no code, only boxes |
+| 2026-10-08 | Bots plant at least 1 m inside a site; site areas reach the walls | A bot stopping 0.6 m from a spot at a site's edge was outside the site and never planted |
+| 2026-10-08 | All shaders compiled when a map loads (hidden effects made visible for the compile) | The first tracer or flash compiling mid-fight froze the game for 100-200 ms on Windows |
 | 2026-10-07 | Units in metres, CS movement constants converted (1 Hammer unit ≈ 2.54 cm) | Familiar feel |

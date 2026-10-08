@@ -3,7 +3,9 @@ import { test } from "node:test";
 import type { Box } from "./collision.ts";
 import { rayBox } from "./collision.ts";
 import * as C from "./constants.ts";
-import { MAP, SPAWNS } from "./map.ts";
+import { OUTPOST } from "./maps/outpost.ts";
+
+const MAP = OUTPOST.boxes, SPAWNS = OUTPOST.spawns;
 import { newPlayer, stepPlayer, type MoveInput, type PlayerState } from "./movement.ts";
 
 const FLOOR: Box = { min: [-50, -1, -50], max: [50, 0, 50] };

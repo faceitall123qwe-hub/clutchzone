@@ -1,3 +1,4 @@
+import { MAPS } from "../shared/maps.ts";
 import { TEAM_NAMES, type RemotePlayer } from "../shared/protocol.ts";
 import { WEAPONS } from "../shared/weapons.ts";
 
@@ -42,7 +43,8 @@ const html = `
     <button id="online">Quick play</button>
     <div id="rooms"></div>
     <div id="invite"><span>Invite friends:</span><input id="link" readonly><button id="copy">Copy</button></div>
-    <button id="private" class="ghost">Create private room</button>
+    <div id="privrow"><button id="private" class="ghost">Create private room</button>
+      <select id="mapsel" title="Map">${MAPS.map((m) => `<option value="${m.id}">${m.name}</option>`).join("")}</select></div>
     <button id="range" class="ghost">Shooting range (offline)</button>
     <p id="error"></p>
     <details id="settings"><summary>Settings</summary>
@@ -118,7 +120,7 @@ export class Hud {
     this.el("invite").style.display = opts.room ? "flex" : "none";
     this.el("online").textContent = opts.playing ? "Resume" : opts.room ? `Join room ${opts.room}` : "Quick play";
     this.el("range").style.display = opts.playing ? "none" : "block";
-    this.el("private").style.display = opts.playing ? "none" : "block";
+    this.el("privrow").style.display = opts.playing ? "none" : "flex";
     this.el("rooms").style.display = opts.playing ? "none" : "grid";
     this.el("sub").textContent = opts.playing === "range" ? "Shooting range · offline"
       : opts.room ? `Room ${opts.room} · map Outpost` : "Browser tactical shooter";
@@ -133,12 +135,16 @@ export class Hud {
   }
 
   /** Open public rooms; clicking one calls join(id). */
-  rooms(list: { id: string; players: number; max: number }[], join: (id: string) => void): void {
+  get chosenMap(): string {
+    return (this.el("mapsel") as HTMLSelectElement).value;
+  }
+
+  rooms(list: { id: string; players: number; max: number; map?: string }[], join: (id: string) => void): void {
     const box = this.el("rooms");
     box.replaceChildren(...list.filter((r) => r.players > 0).slice(0, 6).map((r) => {
       const b = document.createElement("button");
       b.className = "room";
-      b.innerHTML = `<span>${esc(r.id.replace(/^pub-/, "Room "))}</span><b>${r.players}/${r.max}</b>`;
+      b.innerHTML = `<span>${esc(r.id.replace(/^pub-/, "Room "))}${r.map ? ` <i>${esc(r.map)}</i>` : ""}</span><b>${r.players}/${r.max}</b>`;
       b.addEventListener("click", () => join(r.id));
       return b;
     }));

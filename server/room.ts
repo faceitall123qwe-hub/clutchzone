@@ -1,7 +1,8 @@
 import type { Vec3 } from "../shared/collision.ts";
 import { TICK } from "../shared/constants.ts";
 import { DAMAGE_SCALE, type Part } from "../shared/hitbox.ts";
-import { MAP, SITES, siteAt, SPAWNS, type Site } from "../shared/map.ts";
+import { siteAt, type MapDef, type Site } from "../shared/map.ts";
+import { mapById, nextMap } from "../shared/maps.ts";
 import * as P from "../shared/protocol.ts";
 import { ATK, DEF } from "../shared/protocol.ts";
 import { gunOf, newSim, shotSeed, simulate, traceMap, traceTargets, type Cmd, type Sim } from "../shared/sim.ts";
@@ -81,8 +82,9 @@ export class Room {
   readonly id: string;
   tick = 0;
   readonly players = new Map<number, Player>();
+  map: MapDef;
   readonly round: P.RoundState = {
-    phase: "warmup", endsAt: 0, round: 0, score: [0, 0],
+    map: "", phase: "warmup", endsAt: 0, round: 0, score: [0, 0],
     bomb: { carrier: null, pos: null, planted: false, site: null }, winner: null, reason: "",
   };
   private nextId = 1;
@@ -94,10 +96,12 @@ export class Room {
   private liveSince = 0;
   private attackSite: Site = "A"; // where the attacking bots go this round
 
-  constructor(id: string, opts: { dev?: boolean; bots?: boolean } = {}) {
+  constructor(id: string, opts: { dev?: boolean; bots?: boolean; map?: string } = {}) {
     this.id = id;
     this.dev = opts.dev ?? false;
     this.withBots = opts.bots ?? false;
+    this.map = mapById(opts.map);
+    this.round.map = this.map.id;
   }
 
   get humans() {
@@ -184,7 +188,7 @@ export class Room {
 
   /** On the team's side of the map, on a spawn point no living teammate is standing on. */
   private spawn(p: Player): void {
-    const spots = p.team === ATK ? SPAWNS.attackers : SPAWNS.defenders;
+    const spots = p.team === ATK ? this.map.spawns.attackers : this.map.spawns.defenders;
     const mates = this.teamOf(p.team, true).filter((o) => o !== p).map((o) => o.sim.move.pos);
     const s = spots.find((s) => mates.every((m) => Math.hypot(m.x - s.x, m.z - s.z) > 0.8)) ?? pick(spots)!;
     const lastSeq = p.lastSeq;
@@ -215,7 +219,8 @@ export class Room {
     r.bomb = { carrier: pick(attackers)?.id ?? null, pos: null, planted: false, site: null };
     // bots: the attackers pick a site together, the defenders split between both
     this.attackSite = Math.random() < 0.5 ? "A" : "B";
-    const spots = { A: spotsIn(SITES.A.min, SITES.A.max), B: spotsIn(SITES.B.min, SITES.B.max) };
+    // a metre inside the site, so a bot that stops near its spot is still in the site
+    const spots = { A: spotsIn(this.map, this.map.sites.A, 1), B: spotsIn(this.map, this.map.sites.B, 1) };
     let i = 0;
     for (const p of this.players.values()) {
       if (!p.bot) continue;
@@ -275,6 +280,8 @@ export class Room {
       case "matchover":
         if (this.tick < r.endsAt) break;
         for (const p of this.players.values()) { p.team = 1 - p.team; p.kills = p.deaths = 0; } // swap sides
+        this.map = nextMap(this.map);
+        r.map = this.map.id;
         this.startRound(true);
         break;
     }
@@ -297,7 +304,7 @@ export class Room {
     }
     for (const p of this.players.values()) {
       if (!p.alive || !p.use || r.phase !== "live") { p.act = 0; continue; }
-      const site = siteAt(p.sim.move.pos);
+      const site = siteAt(this.map, p.sim.move.pos);
       if (p.team === ATK && b.carrier === p.id && site && p.sim.move.onGround) {
         p.act += TICK;
         if (p.act >= P.PLANT_TIME - 1e-9) {
@@ -305,7 +312,7 @@ export class Room {
           r.bomb = { carrier: null, pos: { ...p.sim.move.pos }, planted: true, site };
           r.endsAt = this.tick + ticks(P.BOMB_TIME);
           this.events.push({ type: "planted", by: p.id, site });
-          const guard = spotsNear(p.sim.move.pos, 8);
+          const guard = spotsNear(this.map, p.sim.move.pos, 8);
           for (const o of this.teamOf(ATK)) if (o.bot) o.spot = pick(guard);
         }
       } else if (p.team === DEF && b.planted && b.pos && Math.hypot(p.sim.move.pos.x - b.pos.x,
@@ -367,8 +374,8 @@ export class Room {
     p.yaw = cmd.yaw;
     p.pitch = cmd.pitch;
     p.use = cmd.use;
-    for (const b of simulate(p.sim, cmd, shotSeed(p.id, cmd.seq), MAP)) {
-      const wall = traceMap(b, MAP);
+    for (const b of simulate(p.sim, cmd, shotSeed(p.id, cmd.seq), this.map.boxes)) {
+      const wall = traceMap(b, this.map.boxes);
       const hit = traceTargets(b, this.posesAt(viewTick, p), wall.t);
       const t = hit?.t ?? wall.t;
       this.events.push({ type: "shot", id: p.id, w: b.w, o: b.o,
@@ -421,7 +428,8 @@ export class Room {
       if (p.bot) {
         const enemies = [...this.players.values()].filter((o) => o.team !== p.team && o.alive)
           .map((o) => ({ id: o.id, feet: o.sim.move.pos, crouched: o.sim.move.crouched }));
-        const cmd = p.bot.think(p.sim.move, p.yaw, p.pitch, gunOf(p.sim).ammo, enemies, this.tick, this.objective(p));
+        const cmd = p.bot.think(this.map, p.sim.move, p.yaw, p.pitch, gunOf(p.sim).ammo, enemies, this.tick,
+          this.objective(p));
         this.runCommand(p, { ...cmd, seq: p.lastSeq + 1 }, this.tick);
       }
       p.budget = Math.min(p.budget + 1, BUDGET_CAP);

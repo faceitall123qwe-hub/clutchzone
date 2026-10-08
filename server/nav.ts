@@ -1,20 +1,20 @@
 import type { Box, Vec3 } from "../shared/collision.ts";
 import { blocked, moveAxis } from "../shared/collision.ts";
 import * as C from "../shared/constants.ts";
+import type { MapDef } from "../shared/map.ts";
 import { newPlayer, stepPlayer, type MoveInput } from "../shared/movement.ts";
 
 /** Walkable points on a grid and the links a player can actually walk, for bots to path along. */
 export type NavGraph = { nodes: Vec3[]; links: number[][] };
 
 const SPACING = 1.5;
-const MAX_FLOOR = 2.6; // the highest place a player can climb to (crates on the A platform)
 
 /** Where a player dropped from above (x, z) comes to rest — on stairs that's the step edge it
- * lands on — or null if there's no room to stand. */
-function groundAt(x: number, z: number, boxes: readonly Box[]): number | null {
-  const p = { x, y: MAX_FLOOR + 0.1, z };
-  if (blocked(p, C.PLAYER_RADIUS, C.STAND_HEIGHT, boxes)) return null; // inside a wall or under a roof
-  return moveAxis(p, 1, -(MAX_FLOOR + 1), C.PLAYER_RADIUS, C.STAND_HEIGHT, boxes) ? p.y : null;
+ * lands on — or null if there's no room to stand. maxFloor: the highest place a player can climb to. */
+function groundAt(x: number, z: number, boxes: readonly Box[], maxFloor: number): number | null {
+  const p = { x, y: maxFloor + 0.1, z };
+  if (blocked(p, C.PLAYER_RADIUS, C.STAND_HEIGHT, boxes)) return null; // inside a wall or under a low roof
+  return moveAxis(p, 1, -(maxFloor + 1), C.PLAYER_RADIUS, C.STAND_HEIGHT, boxes) ? p.y : null;
 }
 
 /** Walk from a towards b with real movement physics; true if it arrives (handles stairs and steps). */
@@ -33,14 +33,15 @@ function walkable(a: Vec3, b: Vec3, boxes: readonly Box[]): boolean {
   return false;
 }
 
-export function buildNav(boxes: readonly Box[], half = 23.5): NavGraph {
+export function buildNav(map: MapDef): NavGraph {
+  const boxes = map.boxes;
   const nodes: Vec3[] = [];
   const index = new Map<string, number>();
-  const n = Math.floor(half / SPACING);
+  const n = Math.floor((map.half - 0.5) / SPACING);
   for (let i = -n; i <= n; i++)
     for (let j = -n; j <= n; j++) {
       const x = i * SPACING, z = j * SPACING;
-      const y = groundAt(x, z, boxes);
+      const y = groundAt(x, z, boxes, map.maxFloor);
       if (y === null) continue;
       index.set(`${i},${j}`, nodes.length);
       nodes.push({ x, y, z });

@@ -2,7 +2,9 @@ import * as THREE from "three";
 import { CROUCH_EYE, MAX_SPEED, STAND_EYE, TICK, WALK_FACTOR } from "../shared/constants.ts";
 import { viewRecoil } from "../shared/gun.ts";
 import { DAMAGE_SCALE, type Part } from "../shared/hitbox.ts";
-import { MAP, siteAt, SPAWNS } from "../shared/map.ts";
+import { siteAt, type MapDef } from "../shared/map.ts";
+import { mapById } from "../shared/maps.ts";
+import { OUTPOST } from "../shared/maps/outpost.ts";
 import { eyeHeight } from "../shared/movement.ts";
 import { ATK, DEFUSE_RANGE, TEAM_NAMES, type GameEvent, type RemotePlayer, type Snapshot } from "../shared/protocol.ts";
 import {
@@ -20,7 +22,7 @@ import { Net } from "./net";
 import { Radar } from "./radar";
 import { Remotes } from "./remote";
 import { ViewModel } from "./weapon";
-import { buildWorld } from "./world";
+import { buildWorld, type World } from "./world";
 
 const SENSITIVITY = 0.0022; // radians per mouse pixel at sensitivity 1
 const VIEW_RECOIL = 0.45; // share of the spray the camera shows; bullets land above the crosshair
@@ -36,7 +38,8 @@ renderer.info.autoReset = false; // count the world and the gun pass together
 document.body.append(renderer.domElement);
 
 const scene = new THREE.Scene();
-buildWorld(scene);
+let currentMap: MapDef = OUTPOST;
+let world: World = buildWorld(scene, currentMap);
 const camera = new THREE.PerspectiveCamera(80, innerWidth / innerHeight, 0.05, 250);
 camera.rotation.order = "YXZ";
 const view = new ViewModel(renderer);
@@ -50,13 +53,36 @@ const flashes = new Flashes(scene);
 const remotes = new Remotes(scene);
 const bombView = new BombView(scene);
 const radar = new Radar(document.getElementById("hud")!);
+radar.setMap(currentMap);
+
+/** Compiles every shader now, hidden pooled effects included. Otherwise the first tracer, muzzle flash or
+ * dropped bomb compiles its shader mid-fight, a 100-200 ms freeze on Windows. */
+function warmUp(): void {
+  const hidden: THREE.Object3D[] = [];
+  for (const root of [scene, view.scene])
+    root.traverse((o) => { if (!o.visible) { hidden.push(o); o.visible = true; } });
+  renderer.compile(scene, camera);
+  renderer.compile(view.scene, view.camera);
+  for (const o of hidden) o.visible = false;
+}
+
+/** Rooms change maps between matches: rebuild what's drawn; the simulation reads currentMap.boxes. */
+function setMap(map: MapDef): void {
+  if (map === currentMap) return;
+  world.dispose();
+  currentMap = map;
+  world = buildWorld(scene, map);
+  radar.setMap(map);
+  decals.clear();
+  warmUp();
+}
 setVolume(hud.settings.volume);
 hud.onSettings = (s) => setVolume(s.volume);
 
 type Mode = { kind: "range"; bots: Bot[] } | { kind: "online"; net: Net };
 let mode: Mode | null = null;
 
-const spawn = SPAWNS.attackers[2];
+const spawn = OUTPOST.spawns.attackers[2];
 let me = newSim(spawn.x, 0, spawn.z);
 let yaw = spawn.yaw, pitch = 0, seq = 0, myId = 1;
 let pending: Cmd[] = []; // sent to the server, not yet acknowledged
@@ -69,7 +95,8 @@ let act = 0, actClickIn = 0, deadAt = 0, shake = 0;
 let specId: number | null = null, specNext = false, firing = false; // whom we watch after dying
 const names = new Map<number, string>(), teams = new Map<number, number>();
 let devFire = 0, devInput = false; // dev hooks for headless checks
-let frames = 0, fps = 0, fpsSince = performance.now();
+let devCam: { x: number; y: number; z: number; yaw: number; pitch: number } | null = null;
+let frames = 0, fps = 0, fpsSince = performance.now(), lastFrame = performance.now(), longest = 0, longestShown = 0;
 
 const roomParam = new URLSearchParams(location.search).get("room")?.replace(/[^a-z0-9-]/gi, "") || undefined;
 hud.menu(true, { room: roomParam });
@@ -81,11 +108,12 @@ const ndc = new THREE.Vector2(), muzzle = new THREE.Vector3(), tmp = new THREE.V
 /** Dust and a bullet hole where a bullet hit the map; sparks off metal. */
 function wallImpact(o: THREE.Vector3, end: THREE.Vector3): void {
   const d = tmp.subVectors(end, o).normalize();
-  const hit = traceMap({ o, d }, MAP, o.distanceTo(end) + 0.05);
+  const hit = traceMap({ o, d }, currentMap.boxes, o.distanceTo(end) + 0.05);
   if (!hit.hitWall) return;
   const n = new THREE.Vector3(...hit.normal);
   decals.add(end, n);
-  particles.impact(end, n, MAP[hit.index].kind === "metal");
+  const kind = currentMap.boxes[hit.index].kind;
+  particles.impact(end, n, kind === "metal" || kind === "container");
 }
 
 /** Where our tracer starts: on screen it must leave the muzzle of the first-person gun, which is drawn
@@ -99,7 +127,7 @@ function ourMuzzle(): THREE.Vector3 {
 
 /** Muzzle flash, tracer and impact for one of our bullets; in the range also the damage. */
 function ourShot(b: Bullet): void {
-  const wall = traceMap(b, MAP);
+  const wall = traceMap(b, currentMap.boxes);
   let t = wall.t, onPlayer = false;
   if (mode?.kind === "range") {
     const hit = traceTargets(b, mode.bots.filter((x) => x.alive).map((x) => ({ id: x, feet: x.feet, crouched: x.crouched })), wall.t);
@@ -150,12 +178,13 @@ function playFx(f: Fx): void {
 }
 
 function onSnap(s: Snapshot): void {
+  if (s.round) setMap(mapById(s.round.map));
   for (const p of s.players) { names.set(p.id, p.name); teams.set(p.id, p.team); }
   // Reconcile: take the server's state for the last command it ran, replay the ones it hasn't yet.
   const before = { ...me.move.pos };
   me = cloneSim(s.you.sim);
   pending = pending.filter((c) => c.seq > s.you.lastSeq);
-  if (s.you.alive) for (const c of pending) simulate(me, c, shotSeed(myId, c.seq), MAP);
+  if (s.you.alive) for (const c of pending) simulate(me, c, shotSeed(myId, c.seq), currentMap.boxes);
   const moved = Math.hypot(me.move.pos.x - before.x, me.move.pos.z - before.z) > 2; // (re)spawned
   if (moved) { Object.assign(prev, me.move.pos); scopeOn = false; }
   // on joining and at every spawn, face the middle of the map instead of the spawn wall
@@ -222,9 +251,10 @@ function onSnap(s: Snapshot): void {
 
 remotes.onStep = (at) => footstep(Math.min(0.7, 3 / (at.distanceTo(camera.position) + 3)) - 0.05);
 
-async function goOnline(room: string): Promise<void> {
+/** map: the first map of a room we open ourselves. */
+async function goOnline(room: string, map?: string): Promise<void> {
   history.replaceState(null, "", `?room=${room}`);
-  const net = new Net(room, hud.name);
+  const net = new Net(room, hud.name, map);
   mode = { kind: "online", net };
   net.onSnap = onSnap;
   net.onClose = (reason) => { hud.error(reason); document.exitPointerLock(); };
@@ -237,6 +267,7 @@ async function goOnline(room: string): Promise<void> {
 }
 
 function goRange(): void {
+  setMap(OUTPOST);
   mode = { kind: "range", bots: spawnBots(scene) };
   me = newSim(spawn.x, 0, spawn.z);
   Object.assign(prev, me.move.pos);
@@ -246,6 +277,7 @@ function goRange(): void {
 const aiming = () => scopeOn && gunOf(me).cooldown < 1e-9 && me.draw === 0;
 const fov = () => (aiming() ? weaponOf(me).scope!.fov : hud.settings.fov);
 
+warmUp();
 startLoop(
   (dt) => {
     const [mx, my] = takeMouse();
@@ -275,11 +307,11 @@ startLoop(
     Object.assign(prev, me.move.pos);
     const wasReloading = gunOf(me).reloading > 0;
     if (mode?.kind === "online") {
-      if (alive) for (const b of simulate(me, cmd, shotSeed(myId, cmd.seq), MAP)) ourShot(b);
+      if (alive) for (const b of simulate(me, cmd, shotSeed(myId, cmd.seq), currentMap.boxes)) ourShot(b);
       pending.push(cmd);
       mode.net.send({ type: "input", cmd, viewTick: mode.net.viewTick() });
     } else if (mode?.kind === "range") {
-      for (const b of simulate(me, cmd, shotSeed(myId, cmd.seq), MAP)) ourShot(b);
+      for (const b of simulate(me, cmd, shotSeed(myId, cmd.seq), currentMap.boxes)) ourShot(b);
       for (const bot of mode.bots) bot.update(dt);
     }
     if (!wasReloading && gunOf(me).reloading > 0) click();
@@ -293,6 +325,7 @@ startLoop(
     if (act > 0 && (actClickIn -= dt) <= 0) { actClick(); actClickIn = 0.5; }
     shake = Math.max(0, shake - dt * 1.5);
     if (mode?.kind === "online") bombView.update(dt, mode.net.round, mode.net.serverTick(), camera.position);
+    world.update(dt, camera.position);
     tracers.update(dt);
     particles.update(dt);
     glow.update(dt);
@@ -328,13 +361,17 @@ startLoop(
       camera.position.set(spec.x, spec.y + (spec.crouched ? CROUCH_EYE : STAND_EYE), spec.z);
       camera.rotation.set(spec.pitch, spec.yaw, 0);
     } else if (watching) { // nobody left to watch: look over the map
-      camera.position.set(0, 30, 32);
+      camera.position.set(0, currentMap.half + 6, currentMap.half + 8);
       camera.lookAt(0, 0, -4);
     } else {
       const [rp, ry] = viewRecoil(gun, w);
       const p = me.move.pos;
       camera.position.set(prev.x + (p.x - prev.x) * alpha, prev.y + (p.y - prev.y) * alpha + eye, prev.z + (p.z - prev.z) * alpha);
       camera.rotation.set(pitch + rp * VIEW_RECOIL, yaw - ry * VIEW_RECOIL, 0);
+    }
+    if (devCam) {
+      camera.position.set(devCam.x, devCam.y, devCam.z);
+      camera.rotation.set(devCam.pitch, devCam.yaw, 0);
     }
     if (shake > 0) camera.position.add(tmp.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).multiplyScalar(shake * 0.25));
     const wantFov = watching ? hud.settings.fov : fov();
@@ -361,7 +398,7 @@ startLoop(
       };
       if (!watching) {
         const hit = traceTargets(look, others.filter((x) => x.alive).map((x) => ({ id: x, feet: x, crouched: x.crouched })),
-          traceMap(look, MAP, RANGE).t);
+          traceMap(look, currentMap.boxes, RANGE).t);
         if (hit) target = { name: hit.id.name, enemy: hit.id.team !== myTeam };
       }
       const latest = net.latest();
@@ -383,7 +420,7 @@ startLoop(
         hud.progress(act > 0 ? (myTeam === ATK ? "Planting the bomb" : "Defusing the bomb") : null, act);
         const nearBomb = !!b.pos && camera.position.distanceTo(tmp.set(b.pos.x, b.pos.y + eye, b.pos.z)) <= DEFUSE_RANGE + 0.3;
         hud.hint(!live || act > 0 ? null
-          : b.carrier === myId && siteAt(me.move.pos) ? "Hold E to plant the bomb"
+          : b.carrier === myId && siteAt(currentMap, me.move.pos) ? "Hold E to plant the bomb"
           : b.carrier === myId ? "Take the bomb to site A or B"
           : myTeam !== ATK && b.planted && nearBomb ? "Hold E to defuse" : null);
       }
@@ -394,7 +431,7 @@ startLoop(
         if (!o.alive || o.team === myTeam || watching) return false;
         const d = { x: o.x - eyePos.x, y: o.y + 1.2 - eyePos.y, z: o.z - eyePos.z };
         const ahead = Math.abs(wrap(Math.atan2(-d.x, -d.z) - yaw)) < 1.2;
-        return ahead && traceMap({ o: eyePos, d }, MAP, 1).t >= 1;
+        return ahead && traceMap({ o: eyePos, d }, currentMap.boxes, 1).t >= 1;
       });
       const holder = latest.find((p) => p.id === carrier && p.alive);
       const bomb = round?.bomb.pos && (myTeam === ATK || round.bomb.planted)
@@ -421,9 +458,12 @@ startLoop(
     hud.weapon(me.slot, gun.ammo, gun.reserve, gun.reloading > 0 ? 1 - gun.reloading / w.reloadTime : 0);
 
     frames++;
+    longest = Math.max(longest, performance.now() - lastFrame);
+    lastFrame = performance.now();
     if (performance.now() - fpsSince >= 1000) {
       fps = frames;
-      frames = 0;
+      longestShown = Math.round(longest);
+      frames = longest = 0;
       fpsSince = performance.now();
     }
     renderer.info.reset();
@@ -443,10 +483,10 @@ async function quickPlayRoom(): Promise<string> {
     return `pub-${randomRoom()}`;
   }
 }
-const join = (room: string) => {
+const join = (room: string, map?: string) => {
   unlockAudio();
   lock(); // must happen inside the click: browsers only grant pointer lock to a user gesture
-  if (!mode) void goOnline(room);
+  if (!mode) void goOnline(room, map);
 };
 hud.on("online", () => {
   if (mode || roomParam) { join(roomParam ?? ""); return; }
@@ -454,7 +494,7 @@ hud.on("online", () => {
   lock();
   void quickPlayRoom().then((room) => { if (!mode) void goOnline(room); });
 });
-hud.on("private", () => join(randomRoom()));
+hud.on("private", () => join(randomRoom(), hud.chosenMap));
 // keep the public room list fresh while the menu is open before the game starts
 async function refreshRooms(): Promise<void> {
   if (mode) return;
@@ -492,7 +532,14 @@ if (import.meta.env.DEV) {
   Object.assign(window, {
     __game: {
       start: () => { if (!mode) goRange(); hud.menu(false); devInput = true; },
-      join: async () => { hud.menu(false); devInput = true; await goOnline(roomParam ?? (await quickPlayRoom())); return myId; },
+      join: async (map?: string) => {
+        hud.menu(false);
+        devInput = true;
+        await goOnline(roomParam ?? (await quickPlayRoom()), map);
+        return myId;
+      },
+      camera: (x: number, y: number, z: number, yaw: number, pitch: number) => { devCam = { x, y, z, yaw, pitch }; },
+      map: (id: string) => setMap(mapById(id)),
       look: (y: number, p: number) => { yaw = y; pitch = p; },
       fire: (ticks: number) => { devFire = ticks; },
       weapon: (slot: number) => { wantSlot = slot; },
@@ -509,7 +556,7 @@ if (import.meta.env.DEV) {
       state: () => ({
         id: myId, pos: me.move.pos, onGround: me.move.onGround, crouched: me.move.crouched, yaw, pitch,
         slot: me.slot, ammo: gunOf(me).ammo, reserve: gunOf(me).reserve, hp, alive, pending: pending.length,
-        speed: Math.hypot(me.move.vel.x, me.move.vel.z) / MAX_SPEED, locked: locked(), fps,
+        speed: Math.hypot(me.move.vel.x, me.move.vel.z) / MAX_SPEED, locked: locked(), fps, longestFrameMs: longestShown,
         drawCalls: renderer.info.render.calls, triangles: renderer.info.render.triangles,
         bots: mode?.kind === "range" ? mode.bots.map((b) => ({ hp: b.hp, alive: b.alive })) : [],
         others: mode?.kind === "online" ? mode.net.others().map((o) => ({ id: o.id, name: o.name, x: o.x, z: o.z, hp: o.hp })) : [],

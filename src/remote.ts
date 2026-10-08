@@ -23,6 +23,7 @@ export function stance(o: Outfit, crouched: boolean, mat: THREE.Material): Stanc
     const gk = new Kit();
     muzzles.push(armsKit(o, w, gk).muzzle);
     const mesh = gk.buildSingle(mat);
+    mesh.castShadow = false; // the torso's shadow is enough; every shadow caster is another draw call
     mesh.visible = w === 0;
     aim.add(mesh);
     guns.push(mesh);
@@ -32,7 +33,9 @@ export function stance(o: Outfit, crouched: boolean, mat: THREE.Material): Stanc
     pivot.position.set(x, h * 0.45, 0);
     const lk = new Kit();
     legKit(o, h, crouched, lk);
-    pivot.add(lk.buildSingle(mat));
+    const leg = lk.buildSingle(mat);
+    leg.castShadow = false;
+    pivot.add(leg);
     group.add(pivot);
     return pivot;
   });

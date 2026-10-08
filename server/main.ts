@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 import { WebSocketServer } from "ws";
 import { TICK } from "../shared/constants.ts";
 import { MAX_PLAYERS, type ClientMsg, type ServerMsg } from "../shared/protocol.ts";
+import { MAPS } from "../shared/maps.ts";
 import { Room } from "./room.ts";
 
 const PORT = Number(process.env.PORT ?? 8080);
@@ -32,7 +33,7 @@ const QUICKPLAY_FILL = 8; // start a new public room once the busiest one reache
 
 function publicRooms() {
   return [...rooms.values()].filter((r) => isPublic(r.id))
-    .map((r) => ({ id: r.id, players: r.humans, max: MAX_PLAYERS })) // people, not the bots filling in
+    .map((r) => ({ id: r.id, players: r.humans, max: MAX_PLAYERS, map: r.map.name })) // people, not the bots filling in
     .sort((a, b) => b.players - a.players);
 }
 
@@ -85,7 +86,9 @@ wss.on("connection", (ws, req) => {
   let room = rooms.get(roomId);
   if (!room) {
     if (rooms.size >= MAX_ROOMS) { ws.close(1013, "server full"); return; }
-    rooms.set(roomId, (room = new Room(roomId, { dev: DEV, bots: isPublic(roomId) })));
+    // whoever opens a room picks its first map (private rooms from the menu); public ones start on a random one
+    const map = url.searchParams.get("map") ?? (isPublic(roomId) ? MAPS[Math.floor(Math.random() * MAPS.length)].id : undefined);
+    rooms.set(roomId, (room = new Room(roomId, { dev: DEV, bots: isPublic(roomId), map })));
   }
   const send = (m: ServerMsg | string) => {
     if (ws.readyState === ws.OPEN) ws.send(typeof m === "string" ? m : JSON.stringify(m));
