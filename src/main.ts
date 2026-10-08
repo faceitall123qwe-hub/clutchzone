@@ -118,6 +118,16 @@ let lastPhase = "", lastRound = 0;
 
 type Mode = { kind: "range"; bots: Bot[] } | { kind: "online"; net: Net };
 let mode: Mode | null = null;
+let cg: CrazySDK | null = null;
+let inGame = false;
+/** Tell CrazyGames when the player is in a match rather than the menu. The mouse is often captured before
+ * Quick play has a room, so this runs on both changes. */
+function gameplay(): void {
+  const now = locked() && mode !== null;
+  if (now === inGame) return;
+  inGame = now;
+  if (now) cg?.game.gameplayStart(); else cg?.game.gameplayStop();
+}
 
 const spawn = OUTPOST.spawns.attackers[2];
 let me = newSim(spawn.x, 0, spawn.z);
@@ -363,6 +373,7 @@ async function goOnline(room: string, map?: string): Promise<void> {
   meta.name = hud.name;
   const net = new Net(room, hud.name, map, { look: encodeLook(progress.p.look), pid: progress.p.id, ref: refParam });
   mode = { kind: "online", net };
+  gameplay();
   net.onSnap = onSnap;
   net.onClose = (reason) => { hud.error(reason); document.exitPointerLock(); };
   try {
@@ -371,12 +382,14 @@ async function goOnline(room: string, map?: string): Promise<void> {
   } catch (e) {
     hud.error((e as Error).message);
     mode = null;
+    gameplay();
   }
 }
 
 function goRange(): void {
   setMap(OUTPOST);
   mode = { kind: "range", bots: spawnBots(scene) };
+  gameplay();
   me = newSim(spawn.x, 0, spawn.z);
   Object.assign(prev, me.move.pos);
 }
@@ -630,7 +643,7 @@ hud.on("range", () => {
 });
 renderer.domElement.addEventListener("click", () => { if (mode && !locked()) lock(); });
 document.addEventListener("pointerlockchange", () => {
-  if (locked() && mode) cg?.game.gameplayStart(); else cg?.game.gameplayStop();
+  gameplay();
   const room = mode?.kind === "online" ? mode.net.room : roomParam;
   hud.menu(!locked(), { room, playing: mode?.kind });
   if (!locked()) meta.render();
@@ -647,10 +660,10 @@ function switchRoom(room: string): void {
 }
 
 // CrazyGames: their username, their invite links, joining friends, mute, gameplay start/stop
-let cg: CrazySDK | null = null;
 void crazyGames().then(async (sdk) => {
   if (!sdk) return;
   cg = sdk;
+  if (inGame) sdk.game.gameplayStart(); // the player got into a match before the SDK was ready
   document.body.classList.add("invites");
   hud.linkFor = (room) => sdk.game.inviteLink({ roomId: room });
   const user = await sdk.user.getUser().catch(() => null);
