@@ -1,4 +1,5 @@
 import { MAPS } from "../shared/maps.ts";
+import { PORTAL } from "./config";
 import { TEAM_NAMES, type RemotePlayer } from "../shared/protocol.ts";
 import { WEAPONS } from "../shared/weapons.ts";
 
@@ -39,7 +40,7 @@ const html = `
   <div id="board"></div>
 </div>
 <div id="start">
-  <div class="card">
+  <div class="card"><div class="main">
     <h1>CLUTCHZONE</h1>
     <p class="sub" id="sub">Browser tactical shooter</p>
     <label class="name">Your name <input id="name" maxlength="16" autocomplete="off" spellcheck="false"></label>
@@ -61,7 +62,7 @@ const html = `
       <dt>Weapons</dt><dd>1 2 3 · Q · wheel</dd><dt>Reload</dt><dd>R</dd><dt>Plant / defuse</dt><dd>hold E</dd>
       <dt>Scores</dt><dd>Tab</dd>
     </dl></details>
-  </div>
+  </div></div>
 </div>`;
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
@@ -81,6 +82,8 @@ export class Hud {
   private bannerTimer = 0;
   private slot = -1;
   readonly settings: Settings = { ...DEFAULTS };
+  /** The link that brings a friend into a room; null where we may not link out (a portal without invites). */
+  linkFor: (room: string) => string | null = (room) => (PORTAL ? null : `${location.origin}${location.pathname}?room=${room}`);
   onSettings: (s: Settings) => void = () => {};
 
   constructor() {
@@ -111,6 +114,12 @@ export class Hud {
     }
   }
 
+  /** A name from the platform (CrazyGames username) unless the player typed their own. */
+  suggestName(name: string): void {
+    const input = this.el("name") as HTMLInputElement;
+    if (!input.value.trim()) input.value = name;
+  }
+
   get name(): string {
     return (this.el("name") as HTMLInputElement).value.trim() || `Player${Math.floor(Math.random() * 900 + 100)}`;
   }
@@ -118,9 +127,9 @@ export class Hud {
   /** Menu in its pre-game or paused state. room: the room we're in or about to join. */
   menu(show: boolean, opts: { room?: string; playing?: "online" | "range" } = {}): void {
     this.el("start").style.display = show ? "grid" : "none";
-    const link = opts.room ? `${location.origin}${location.pathname}?room=${opts.room}` : "";
-    (this.el("link") as HTMLInputElement).value = link;
-    this.el("invite").style.display = opts.room ? "flex" : "none";
+    const link = opts.room ? this.linkFor(opts.room) : null;
+    (this.el("link") as HTMLInputElement).value = link ?? "";
+    this.el("invite").style.display = link ? "flex" : "none";
     this.el("online").textContent = opts.playing ? "Resume" : opts.room ? `Join room ${opts.room}` : "Quick play";
     this.el("range").style.display = opts.playing ? "none" : "block";
     this.el("privrow").style.display = opts.playing ? "none" : "flex";

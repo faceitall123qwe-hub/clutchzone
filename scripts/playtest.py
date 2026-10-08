@@ -30,6 +30,7 @@ with sync_playwright() as pw:
     page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
     page.goto(URL)
     page.wait_for_timeout(1500)
+    page.bring_to_front()  # pointer lock needs the window to have focus, which another window may hold
     state = lambda: page.evaluate("__game.state()")
 
     gl = page.evaluate("""() => { const c = document.createElement('canvas').getContext('webgl2');

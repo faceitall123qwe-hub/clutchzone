@@ -15,6 +15,7 @@ import { spread, WEAPONS } from "../shared/weapons.ts";
 import { actClick, audioTrack, click, explosion, footstep, gunshot, hitSound, levelUpSound, roundEnd, setVolume, unlockAudio } from "./audio";
 import { BombView } from "./bomb";
 import { api, PORTAL } from "./config";
+import { crazyGames, type CrazySDK } from "./crazygames";
 import { effectOf, encodeLook, paintOf } from "./cosmetics";
 import { Meta } from "./locker";
 import { levelOf, Progress } from "./profile";
@@ -86,7 +87,7 @@ function setMap(map: MapDef): void {
   warmUp();
 }
 setVolume(hud.settings.volume);
-hud.onSettings = (s) => setVolume(s.volume);
+hud.onSettings = (s) => setVolume(cg?.game.settings.muteAudio ? 0 : s.volume);
 
 // progress: XP, levels, unlocks and daily challenges, kept in the browser
 const progress = new Progress();
@@ -96,7 +97,7 @@ if (PORTAL) document.body.classList.add("portal");
 view.setPaint(paintOf(progress.p.look.paint));
 progress.on({
   xp: (g) => hud.xpPop(g.xp, g.reason),
-  level: (level, unlocked) => { hud.levelUp(level, unlocked); levelUpSound(); },
+  level: (level, unlocked) => { hud.levelUp(level, unlocked); levelUpSound(); cg?.game.happytime(); },
   challenge: (c) => hud.toast(`Challenge done: ${c.text}`),
 });
 meta.onWear = (look) => {
@@ -158,7 +159,7 @@ function autoPilot(dt: number): { fire: boolean; right: number } {
 }
 let frames = 0, fps = 0, fpsSince = performance.now(), lastFrame = performance.now(), longest = 0, longestShown = 0;
 
-const roomParam = new URLSearchParams(location.search).get("room")?.replace(/[^a-z0-9-]/gi, "") || undefined;
+let roomParam = new URLSearchParams(location.search).get("room")?.replace(/[^a-z0-9-]/gi, "") || undefined;
 hud.menu(true, { room: roomParam });
 
 const vec = (v: { x: number; y: number; z: number }) => new THREE.Vector3(v.x, v.y, v.z);
@@ -366,6 +367,7 @@ async function goOnline(room: string, map?: string): Promise<void> {
   net.onClose = (reason) => { hud.error(reason); document.exitPointerLock(); };
   try {
     myId = await net.ready;
+    cg?.game.updateRoom({ roomId: room, isJoinable: true, inviteParams: { roomId: room } });
   } catch (e) {
     hud.error((e as Error).message);
     mode = null;
@@ -628,9 +630,42 @@ hud.on("range", () => {
 });
 renderer.domElement.addEventListener("click", () => { if (mode && !locked()) lock(); });
 document.addEventListener("pointerlockchange", () => {
+  if (locked() && mode) cg?.game.gameplayStart(); else cg?.game.gameplayStop();
   const room = mode?.kind === "online" ? mode.net.room : roomParam;
   hud.menu(!locked(), { room, playing: mode?.kind });
   if (!locked()) meta.render();
+});
+
+/** Move to another room without reloading the page (a CrazyGames invite while already playing). */
+function switchRoom(room: string): void {
+  if (mode?.kind === "online") { mode.net.close(); cg?.game.leftRoom(); }
+  mode = null;
+  pending = [];
+  spawned = false;
+  roomParam = room;
+  void goOnline(room);
+}
+
+// CrazyGames: their username, their invite links, joining friends, mute, gameplay start/stop
+let cg: CrazySDK | null = null;
+void crazyGames().then(async (sdk) => {
+  if (!sdk) return;
+  cg = sdk;
+  document.body.classList.add("invites");
+  hud.linkFor = (room) => sdk.game.inviteLink({ roomId: room });
+  const user = await sdk.user.getUser().catch(() => null);
+  if (user?.username) hud.suggestName(user.username);
+  setVolume(sdk.game.settings.muteAudio ? 0 : hud.settings.volume);
+  sdk.game.addSettingsChangeListener((s) => setVolume(s.muteAudio ? 0 : hud.settings.volume));
+  sdk.game.addJoinRoomListener((params) => { if (params.roomId) switchRoom(params.roomId.replace(/[^a-z0-9-]/gi, "")); });
+  const invited = sdk.game.inviteParams?.roomId?.replace(/[^a-z0-9-]/gi, "");
+  if (invited) {
+    roomParam = invited;
+    hud.menu(true, { room: invited });
+  } else if (sdk.game.isInstantMultiplayer) {
+    switchRoom(randomRoom()); // a party leader goes straight into a new private room
+    hud.menu(true, { room: roomParam, playing: "online" });
+  }
 });
 
 function resize(): void {

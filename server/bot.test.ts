@@ -4,6 +4,7 @@ import { rayBox } from "../shared/collision.ts";
 import { TICK } from "../shared/constants.ts";
 import { OUTPOST } from "../shared/maps/outpost.ts";
 import { ATK, DEF } from "../shared/protocol.ts";
+import { mulberry32 } from "../shared/weapons.ts";
 import { Room, type Player } from "./room.ts";
 
 const bots = (r: Room) => [...r.players.values()].filter((p) => p.bot);
@@ -38,7 +39,9 @@ test("private rooms get no bots", () => {
   assert.equal(bots(room).length, 0);
 });
 
-test("a bot finds and kills a player standing in the open", () => {
+test("a bot finds and kills a player standing in the open", (ctx) => {
+  // easy bots miss most shots, so the time to kill has a long tail: a fixed seed keeps the test repeatable
+  ctx.mock.method(Math, "random", mulberry32(1));
   const room = new Room("pub-y", { bots: true });
   const h = human(room, "target", DEF);
   for (const b of bots(room).filter((b) => b.team === DEF || b !== bots(room).find((x) => x.team === ATK))) room.leave(b.id);

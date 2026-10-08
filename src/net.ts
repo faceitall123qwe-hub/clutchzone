@@ -34,7 +34,16 @@ export class Net {
     this.ws = new WebSocket(wsUrl(q));
     this.ws.onmessage = (e) => this.receive(JSON.parse(e.data) as ServerMsg);
     this.ws.onclose = () => this.onClose("Disconnected from the server");
-    setInterval(() => this.send({ type: "ping", t: performance.now(), rtt: this.rtt }), 2000);
+    this.pinger = window.setInterval(() => this.send({ type: "ping", t: performance.now(), rtt: this.rtt }), 2000);
+  }
+
+  private readonly pinger: number;
+
+  /** Leave on purpose (switching rooms): no "disconnected" error. */
+  close(): void {
+    this.ws.onclose = null;
+    this.ws.close();
+    clearInterval(this.pinger);
   }
 
   send(m: ClientMsg): void {

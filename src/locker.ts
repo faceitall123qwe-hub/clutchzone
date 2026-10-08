@@ -36,7 +36,7 @@ export class Meta {
 
   constructor(progress: Progress) {
     this.progress = progress;
-    document.getElementById("sub")!.insertAdjacentHTML("afterend", html);
+    document.querySelector("#start .card")!.insertAdjacentHTML("beforeend", `<div id="meta">${html}</div>`);
     document.body.insertAdjacentHTML("beforeend", lockerHtml);
     const el = (id: string) => document.getElementById(id)!;
     el("lockerb").addEventListener("click", () => { el("locker").style.display = "grid"; this.renderLocker(); });
