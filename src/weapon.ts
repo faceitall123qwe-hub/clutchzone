@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { starTexture } from "./effects";
+import { PAINTS, type Paint } from "./cosmetics";
 import { gunKit, handsKit, Kit, viewMaterials, type GunSpec } from "./models";
 import { addHull } from "./toon";
 
@@ -13,7 +14,9 @@ const INWARD = [0.06, 0.12, 0.06]; // yaw towards the crosshair
 export class ViewModel {
   readonly scene = new THREE.Scene();
   readonly camera = new THREE.PerspectiveCamera(55, 1, 0.01, 10);
-  private readonly guns: ViewGun[];
+  private guns: ViewGun[] = [];
+  private paint: Paint | null = null;
+  private readonly mats = viewMaterials();
   private readonly flash: THREE.Mesh;
   private readonly flashLight = new THREE.PointLight(0xffc070, 0, 3);
   private slot = 0;
@@ -24,29 +27,39 @@ export class ViewModel {
   private readonly v = new THREE.Vector3();
 
   constructor() {
-    const mats = viewMaterials();
-    this.guns = REST.map((rest, id) => {
-      const k = new Kit();
-      const spec = gunKit(id, k);
-      handsKit(spec, k);
-      const group = k.build(mats);
-      for (const part of group.children) addHull(part as THREE.Mesh, 0.0022); // the world gets its outlines in a pass
-      group.visible = id === 0;
-      this.scene.add(group);
-      return { group, spec, rest, kick: KICK[id], inward: INWARD[id] };
-    });
 
     this.flash = new THREE.Mesh(
       new THREE.PlaneGeometry(0.26, 0.26),
       new THREE.MeshBasicMaterial({ map: starTexture(), transparent: true, depthWrite: false }),
     );
     this.flash.visible = false;
-    this.guns[0].group.add(this.flash, this.flashLight);
+    this.setPaint(PAINTS[0]);
 
     this.scene.add(new THREE.HemisphereLight(0xffffff, 0x8a7a6a, 1.6));
     const key = new THREE.DirectionalLight(0xffffff, 2.2);
     key.position.set(1, 2, 1.5);
     this.scene.add(key);
+  }
+
+  /** Builds the guns again in another paint. */
+  setPaint(paint: Paint): void {
+    if (paint === this.paint) return;
+    this.paint = paint;
+    for (const g of this.guns) {
+      this.scene.remove(g.group);
+      g.group.traverse((o) => { if (o instanceof THREE.Mesh && o !== this.flash) o.geometry.dispose(); });
+    }
+    this.guns = REST.map((rest, id) => {
+      const k = new Kit();
+      const spec = gunKit(id, k, paint);
+      handsKit(spec, k);
+      const group = k.build(this.mats);
+      for (const part of [...group.children]) addHull(part as THREE.Mesh, 0.0022); // the world gets its outlines in a pass
+      group.visible = id === this.slot;
+      this.scene.add(group);
+      return { group, spec, rest, kick: KICK[id], inward: INWARD[id] };
+    });
+    this.guns[this.slot].group.add(this.flash, this.flashLight);
   }
 
   fired(): void {

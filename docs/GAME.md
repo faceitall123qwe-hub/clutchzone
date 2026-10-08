@@ -67,6 +67,15 @@ every map (spawns free, no spawn-to-spawn sightline, both sites reachable, defen
    - [x] More maps: Dockyard and Frostbite, rotation after each match, map choice for private rooms
    - [ ] Economy and buy menu (money for kills and rounds, armour, grenades), pistol rounds
    - [ ] Smoke, flash and frag grenades
+3.5 **Retention** (Tim, 2026-10-08: "people who watch an ad or play once should want to play more")
+   - [x] Bots very easy: ~1-1.5 s to react, aim that keeps wobbling, 2-3 shot bursts, narrow sight
+   - [x] Progress in the browser: XP (kill 10, headshot 15, round win 15, plant 20, defuse 30, match 50/100),
+         levels (100 XP to level 2, +40 per level), 15 unlocks to level 30 (weapon paints, hats, kill effects)
+         that other players see, bots wearing rare ones; 3 daily challenges, a days-in-a-row bonus
+   - [x] Share card after a match (stats + a frame from one of your kills), invite links with ?ref=:
+         the newcomer gets double XP for an hour, the inviter too when the friend joins their room
+   - [ ] Portals (CrazyGames, Poki, itch.io) and short vertical clips (TikTok, Shorts)
+   - Phones: not now (Tim, 2026-10-08)
 4. **Polish & launch** — real art (CC0 low-poly), sounds, second map, matchmaking list, itch.io / CrazyGames.
 
 ## Netcode plan (phase 2)
@@ -109,6 +118,8 @@ The first-person gun, drawn in its own pass, gets inverted-hull outlines instead
 | 2026-10-07 | Lag compensation never rewinds past the newest recorded tick | Asking for the current tick read the ring buffer's 64-tick-old slot: bots shot at where players were a second ago |
 | 2026-10-08 | Toon art style with outlines from depth in one full-screen pass | Tim's choice; one pass costs the same whatever is on screen, no extra draw calls per object |
 | 2026-10-08 | World target without MSAA, 8-bit sRGB colour | With 4x MSAA in half float the laptop fell to 40-47 fps; now 60 again, and the outlines cover the jaggies |
+| 2026-10-08 | Progress lives in localStorage, no accounts | No sign-up wall; unlocks are cosmetic, so a cheater only fools himself |
+| 2026-10-08 | Bots wear random cosmetics, rare ones included | New players see what they can earn |
 | 2026-10-08 | Maps are data (boxes, spawns, sites, decor, theme); the theme picks textures, sky and light | One renderer and one server for every map; new maps need no code, only boxes |
 | 2026-10-08 | Bots plant at least 1 m inside a site; site areas reach the walls | A bot stopping 0.6 m from a spot at a site's edge was outside the site and never planted |
 | 2026-10-08 | All shaders compiled when a map loads (hidden effects made visible for the compile) | The first tracer or flash compiling mid-fight froze the game for 100-200 ms on Windows |

@@ -47,9 +47,9 @@ test("a bot finds and kills a player standing in the open", () => {
   place(h, 0, -2);
   place(bot, 0, 12, 0); // looking down mid towards the target, 14 m away
   let t = 0;
-  while (h.alive && t < 6) { room.step(); t += TICK; h.sim.move.pos.x = 0; h.sim.move.pos.z = -2; }
-  assert.equal(h.alive, false, "killed within 6 s");
-  assert.ok(t > 0.3, `not instantly: reaction time, took ${t.toFixed(2)} s`);
+  while (h.alive && t < 20) { room.step(); t += TICK; h.sim.move.pos.x = 0; h.sim.move.pos.z = -2; }
+  assert.equal(h.alive, false, "killed within 20 s");
+  assert.ok(t > 1.5, `easy bots take their time: ${t.toFixed(2)} s`);
 });
 
 test("bots don't see or shoot through walls", () => {

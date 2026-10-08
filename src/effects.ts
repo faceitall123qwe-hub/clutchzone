@@ -234,6 +234,16 @@ export class Particles {
     }
   }
 
+  /** A kill effect: a burst of bright bits in the killer's colours, falling like confetti. */
+  confetti(p: THREE.Vector3, colors: number[]): void {
+    for (let i = 0; i < 46; i++) {
+      this.v.set(this.rnd(3.5), 2.5 + Math.random() * 3.5, this.rnd(3.5));
+      const h = colors[i % colors.length]; // as on screen, like the other spawn colours
+      this.spawn(p, this.v, [((h >> 16) & 255) / 255, ((h >> 8) & 255) / 255, (h & 255) / 255],
+        0.07 + Math.random() * 0.05, 1.1 + Math.random() * 0.6, 0, 0.45);
+    }
+  }
+
   /** A hit on a player: a red spray along the bullet. */
   blood(p: THREE.Vector3, dir: THREE.Vector3, head: boolean): void {
     for (let i = 0; i < (head ? 16 : 9); i++) {

@@ -39,6 +39,8 @@ export type Player = {
   queue: { cmd: Cmd; viewTick: number }[];
   budget: number;
   send: (msg: P.ServerMsg | string) => void; // a string is an already serialised message
+  look: string; // cosmetics, "paint.hat.effect"
+  pid: string; // the player's profile id, for invite links
   use: boolean; // holding E in the last command
   act: number; // seconds spent planting or defusing so far
   bot?: BotBrain;
@@ -73,6 +75,13 @@ export function sanitize(c: unknown): Cmd | null {
 const pick = <T>(list: T[]): T | undefined => list[Math.floor(Math.random() * list.length)];
 const flat = (a: Vec3, b: Vec3) => Math.hypot(a.x - b.x, a.z - b.z);
 const MID: Vec3 = { x: 0, y: 1.5, z: 4 }; // defenders holding a site watch towards the middle
+
+/** What a joining player tells us about themselves; all of it is checked, none of it trusted. */
+export type JoinMeta = { look?: string; pid?: string; ref?: string };
+const LOOK = /^[a-z]{1,10}\.[a-z]{1,10}\.[a-z]{1,10}$/, PID = /^[a-z0-9]{4,12}$/;
+// bots show off what can be unlocked, the rare things included
+const BOT_LOOKS = ["gold.crown.stars", "neon.viking.confetti", "ice.cowboy.none", "forest.cap.none", "desert.beanie.hearts",
+  "classic.tophat.none", "galaxy.helmet.stars", "classic.helmet.none"];
 
 /**
  * One match on the map: two teams, rounds with a bomb. Before both teams have a player it's a warmup
@@ -126,13 +135,17 @@ export class Room {
     return h[ATK] === h[DEF] ? (Math.random() < 0.5 ? ATK : DEF) : h[ATK] < h[DEF] ? ATK : DEF;
   }
 
-  join(name: string, send: (m: P.ServerMsg | string) => void, bot?: BotBrain, team = this.pickTeam()): Player {
+  join(name: string, send: (m: P.ServerMsg | string) => void, bot?: BotBrain, team = this.pickTeam(), meta: JoinMeta = {}): Player {
     if (!bot) this.balanceBots(team); // make room for the newcomer before they spawn
     const p: Player = {
       id: this.nextId++, name: name.slice(0, 16) || "Player", team, sim: newSim(), yaw: 0, pitch: 0, hp: P.MAX_HP,
       alive: false, respawnIn: 0, killedBy: null, kills: 0, deaths: 0, ping: 0, lastSeq: 0, queue: [], budget: 2, send,
       use: false, act: 0, bot,
+      look: bot ? pick(BOT_LOOKS)! : LOOK.test(meta.look ?? "") ? meta.look! : "classic.helmet.none",
+      pid: PID.test(meta.pid ?? "") ? meta.pid! : "",
     };
+    const host = meta.ref && meta.ref !== p.pid ? [...this.players.values()].find((o) => o.pid === meta.ref) : undefined;
+    if (host) this.events.push({ type: "referral", to: host.id, name: p.name });
     this.players.set(p.id, p);
     // you play straight away in the warmup, the freeze time or the first seconds of a round;
     // otherwise you watch your team until the next round
@@ -180,6 +193,8 @@ export class Room {
     } else if (msg.type === "ping") {
       if (Number.isFinite(msg.rtt)) p.ping = Math.round(msg.rtt!);
       p.send({ type: "pong", t: msg.t });
+    } else if (msg.type === "look" && typeof msg.look === "string" && LOOK.test(msg.look)) {
+      p.look = msg.look;
     } else if (msg.type === "dev" && this.dev) {
       if (msg.teleport) Object.assign(p.sim.move.pos, msg.teleport);
       if (msg.yaw !== undefined) p.yaw = msg.yaw;
@@ -472,7 +487,7 @@ export class Room {
       (pl.alive ? P.ALIVE : 0) | (pl.sim.move.crouched ? P.CROUCHED : 0), pl.hp, pl.sim.slot,
     ]);
     const roster = JSON.stringify([...this.players.values()].map((pl): P.RosterEntry =>
-      [pl.id, pl.name, pl.kills, pl.deaths, pl.ping, pl.team]));
+      [pl.id, pl.name, pl.kills, pl.deaths, pl.ping, pl.team, pl.look]));
     const round = JSON.stringify(this.round);
     // Names, scores and the round change rarely: send them when they do, and once a second for anyone who missed it.
     const resend = this.tick % 60 === 0;

@@ -139,6 +139,52 @@
     #damage { position: absolute; inset: 0; opacity: 0; background: radial-gradient(ellipse at center, transparent 55%, rgba(200,20,20,.55)); }
     #dead { position: absolute; inset: 0; display: none; place-content: center; text-align: center; gap: 8px; background: rgba(60,0,0,.25); }
     #dead b { font-size: 30px; } #dead span { font-size: 16px; opacity: .85; }
+    #xps { position: absolute; left: 50%; top: 72%; transform: translateX(-50%); display: grid; justify-items: center; gap: 2px; }
+    #xps div { font-size: 15px; font-weight: 600; animation: rise 1.8s ease-out forwards; }
+    #xps b { font: 400 20px "Lilita One", system-ui; color: #7cff6b; paint-order: stroke fill; -webkit-text-stroke: 4px #14161c; }
+    @keyframes rise { from { transform: translateY(10px); opacity: 0; } 15% { transform: none; opacity: 1; } 75% { opacity: 1; } to { transform: translateY(-16px); opacity: 0; } }
+    #levelup { position: absolute; left: 50%; top: 36%; transform: translateX(-50%); display: none; justify-items: center; text-align: center; }
+    #levelup.show { display: grid; animation: pop .35s ease-out; }
+    #levelup small, #levelup b { font-family: "Lilita One", system-ui; paint-order: stroke fill; -webkit-text-stroke: 6px #14161c; }
+    #levelup small { font-size: 28px; color: #ffd23f; }
+    #levelup b { font-size: 110px; line-height: 1; color: #fff; text-shadow: 0 6px 0 #14161c; }
+    #levelup span { font-size: 18px; font-weight: 700; margin-top: 4px; padding: 4px 12px; background: #14161ccc; border-radius: 8px; }
+    #toast { position: absolute; left: 50%; top: 64px; transform: translateX(-50%); display: grid; gap: 6px; justify-items: center; }
+    #toast div { padding: 8px 16px; font-size: 15px; font-weight: 700; background: #1d2333ee; border: 3px solid #14161c; border-radius: 12px;
+      box-shadow: 0 4px 0 #14161c; animation: pop .25s ease-out; }
+    #profile { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
+    #profile .lvl { display: grid; place-items: center; width: 58px; height: 58px; border-radius: 50%; background: #ffd23f;
+      border: 4px solid #14161c; box-shadow: 0 4px 0 #14161c; color: #14161c; line-height: 1; }
+    #profile .lvl small { font: 400 11px "Lilita One", system-ui; margin-top: 6px; }
+    #profile .lvl b { font: 400 26px "Lilita One", system-ui; margin-top: -8px; }
+    #profile .xp { flex: 1; display: grid; gap: 4px; font-size: 12px; opacity: .9; }
+    #profile .bar { height: 12px; background: #0e1116; border: 2px solid #14161c; border-radius: 8px; overflow: hidden; }
+    #profile .bar i { display: block; height: 100%; background: linear-gradient(90deg, #7cff6b, #c4ff6b); }
+    #pstreak { font-size: 12px; text-align: center; color: #ffb35a; } #pstreak b { font: 400 22px "Lilita One", system-ui; display: block; }
+    #pboost { color: #7cff6b; font-size: 13px; font-weight: 700; }
+    #daily h3 { margin: 10px 0 6px; font-size: 13px; text-transform: uppercase; letter-spacing: .1em; opacity: .7; }
+    #daily .ch { position: relative; display: flex; justify-content: space-between; gap: 8px; padding: 7px 10px; margin-bottom: 5px;
+      font-size: 13px; background: #0e1116; border-radius: 8px; overflow: hidden; }
+    #daily .ch > * { position: relative; z-index: 1; } #daily .ch i { position: absolute; inset: 0 auto 0 0; background: #2f8ff044; z-index: 0; }
+    #daily .ch em { font-style: normal; color: #7cff6b; font-size: 12px; } #daily .ch.done { opacity: .55; }
+    #lastmatch { font-size: 13px; margin: 8px 0 0; opacity: .9; }
+    #start .row2 { display: flex; gap: 8px; margin: 10px 0 4px; } #start .row2 button { margin-top: 0; }
+    #sharemsg { font-size: 13px; margin: 6px 0 0; color: #b8e2ff; } #sharemsg a { color: #ffd23f; }
+    #controls { margin-top: 10px; font-size: 14px; } #controls summary { cursor: pointer; opacity: .8; }
+    #locker { position: fixed; inset: 0; display: none; place-items: center; background: #0b0e13d0; color: #e9e4d8; z-index: 5; }
+    #locker .panel { width: min(640px, 94vw); max-height: 88vh; overflow-y: auto; background: #1d2333; border: 4px solid #14161c;
+      border-radius: 22px; box-shadow: 0 10px 0 #14161c; padding: 22px 26px; }
+    #locker .head { display: flex; justify-content: space-between; align-items: center; }
+    #locker h2 { margin: 0; font: 400 40px "Lilita One", system-ui; color: #ffd23f; paint-order: stroke fill; -webkit-text-stroke: 6px #14161c; }
+    #locker button { font: 400 17px "Lilita One", system-ui; color: #14161c; background: #ffd23f; border: 3px solid #14161c;
+      border-radius: 12px; padding: 8px 14px; cursor: pointer; box-shadow: 0 4px 0 #14161c; }
+    #locker .tabs { display: flex; gap: 8px; margin: 16px 0; } #locker .tabs button { background: #4d6280; color: #fff; }
+    #locker .tabs button.on { background: #4d9cf0; }
+    #items { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; }
+    #items .item { display: grid; justify-items: center; gap: 6px; padding: 12px 8px; background: #f2f5fa; }
+    #items .item.on { background: #7cff6b; } #items .item.locked { background: #8a93a4; cursor: not-allowed; opacity: .75; }
+    #items .item b { font-weight: 400; } #items .item small { font: 600 12px system-ui; }
+    #items .sw { width: 56px; height: 40px; border-radius: 8px; border: 3px solid #14161c; background: #d6dbe4; }
     #board { position: absolute; inset: 0; display: none; place-content: center; gap: 14px; }
     #board .team { border-top: 3px solid var(--team); background: #10141bdd; }
     #board table { border-collapse: collapse; min-width: 460px; font-size: 15px; }

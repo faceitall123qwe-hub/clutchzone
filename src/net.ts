@@ -22,15 +22,15 @@ export class Net {
   private resolveReady: (id: number) => void = () => {};
   private rejectReady: (e: Error) => void = () => {};
 
-  /** map: the first map, if this connection opens the room. */
-  constructor(room: string, name: string, map?: string) {
+  /** map: the first map, if this connection opens the room; meta: cosmetics, profile id, who invited us. */
+  constructor(room: string, name: string, map?: string, meta: { look: string; pid: string; ref?: string } = { look: "", pid: "" }) {
     this.room = room;
     this.ready = new Promise((resolve, reject) => {
       this.resolveReady = resolve;
       this.rejectReady = reject;
     });
     const proto = location.protocol === "https:" ? "wss" : "ws";
-    const q = new URLSearchParams({ room, name, ...(map ? { map } : {}) });
+    const q = new URLSearchParams({ room, name, look: meta.look, pid: meta.pid, ...(map ? { map } : {}), ...(meta.ref ? { ref: meta.ref } : {}) });
     this.ws = new WebSocket(`${proto}://${location.host}/ws?${q}`);
     this.ws.onmessage = (e) => this.receive(JSON.parse(e.data) as ServerMsg);
     this.ws.onclose = () => this.onClose("Disconnected from the server");

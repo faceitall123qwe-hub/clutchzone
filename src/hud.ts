@@ -20,6 +20,9 @@ const html = `
   <div id="damage"></div>
   <div id="dirs"></div>
   <div id="banner"></div>
+  <div id="xps"></div>
+  <div id="levelup"><small>LEVEL UP</small><b></b><span></span></div>
+  <div id="toast"></div>
   <div id="round"><div class="pips" id="pa"></div><b class="atk" id="sa">0</b><div class="mid"><span id="rtime"></span><small id="rphase"></small></div><b class="def" id="sd">0</b><div class="pips" id="pd"></div></div>
   <div id="result"><b></b><span></span></div>
   <div id="act"><span></span><div><i></i></div></div>
@@ -52,12 +55,12 @@ const html = `
       <label>Field of view <output id="fovv"></output><input id="fov" type="range" min="70" max="100" step="1"></label>
       <label>Volume <output id="volv"></output><input id="vol" type="range" min="0" max="1" step="0.05"></label>
     </details>
-    <dl>
+    <details id="controls"><summary>Controls</summary><dl>
       <dt>Move</dt><dd>W A S D</dd><dt>Jump</dt><dd>Space</dd><dt>Crouch</dt><dd>C</dd>
       <dt>Walk</dt><dd>Shift</dd><dt>Shoot</dt><dd>Left mouse</dd><dt>Scope</dt><dd>Right mouse (sniper)</dd>
       <dt>Weapons</dt><dd>1 2 3 · Q · wheel</dd><dt>Reload</dt><dd>R</dd><dt>Plant / defuse</dt><dd>hold E</dd>
       <dt>Scores</dt><dd>Tab</dd>
-    </dl>
+    </dl></details>
   </div>
 </div>`;
 
@@ -234,6 +237,35 @@ export class Hud {
   }
 
   /** Teams colour the names; weapon -1 is the bomb, which has no killer. */
+  /** "+15 XP Headshot", floating up under the crosshair. */
+  xpPop(xp: number, reason: string): void {
+    const d = document.createElement("div");
+    d.innerHTML = `<b>+${xp} XP</b> ${esc(reason)}`;
+    const box = this.el("xps");
+    box.append(d);
+    while (box.children.length > 4) box.firstElementChild!.remove();
+    setTimeout(() => d.remove(), 1800);
+  }
+
+  levelUp(level: number, unlocked: string[]): void {
+    const l = this.el("levelup");
+    l.querySelector("b")!.textContent = String(level);
+    l.querySelector("span")!.textContent = unlocked.length ? `Unlocked: ${unlocked.join(", ")} (see the Locker)` : "";
+    l.classList.remove("show");
+    void l.offsetWidth; // restart the animation
+    l.classList.add("show");
+    clearTimeout(this.levelTimer);
+    this.levelTimer = window.setTimeout(() => l.classList.remove("show"), 4000);
+  }
+  private levelTimer = 0;
+
+  toast(text: string): void {
+    const t = document.createElement("div");
+    t.textContent = text;
+    this.el("toast").append(t);
+    setTimeout(() => t.remove(), 4000);
+  }
+
   feed(killer: string, victim: string, weapon: number, head: boolean, mine: boolean, teams: [number, number] = [0, 1]): void {
     const row = document.createElement("div");
     row.className = mine ? "kill mine" : "kill";

@@ -418,3 +418,27 @@ test("a shot judged at the present tick uses the newest positions, not ones a se
   room.step();
   assert.equal(b.hp, 64);
 });
+
+test("cosmetics travel in the roster; junk is replaced; the locker can change them mid-game", () => {
+  const room = new Room("t");
+  const inbox: ServerMsg[] = [];
+  const a = room.join("a", (m) => inbox.push(typeof m === "string" ? JSON.parse(m) : m), undefined, ATK, { look: "gold.crown.stars" });
+  const b = room.join("b", () => {}, undefined, DEF, { look: "<script>" });
+  room.step(); room.step();
+  const roster = (inbox.filter((m) => m.type === "snap").at(-1) as Extract<ServerMsg, { type: "snap" }>).r!;
+  assert.equal(roster.find((e) => e[0] === a.id)![6], "gold.crown.stars");
+  assert.equal(roster.find((e) => e[0] === b.id)![6], "classic.helmet.none");
+  room.onMessage(b, { type: "look", look: "neon.cap.confetti" });
+  assert.equal(b.look, "neon.cap.confetti");
+});
+
+test("joining through someone's invite link tells them, if they're in the room", () => {
+  const room = new Room("t");
+  const inbox: ServerMsg[] = [];
+  const host = room.join("host", (m) => inbox.push(typeof m === "string" ? JSON.parse(m) : m), undefined, ATK, { pid: "abcd1234" });
+  room.join("friend", () => {}, undefined, DEF, { pid: "zzzz9999", ref: "abcd1234" });
+  room.join("self", () => {}, undefined, DEF, { pid: "abcd1234", ref: "abcd1234" }); // no reward for inviting yourself
+  room.step(); room.step();
+  const refs = inbox.flatMap((m) => (m.type === "snap" ? m.events : [])).filter((e) => e.type === "referral");
+  assert.deepEqual(refs, [{ type: "referral", to: host.id, name: "friend" }]);
+});

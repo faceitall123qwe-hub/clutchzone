@@ -6,13 +6,17 @@ import { siteAt, type MapDef } from "../shared/map.ts";
 import { mapById } from "../shared/maps.ts";
 import { OUTPOST } from "../shared/maps/outpost.ts";
 import { eyeHeight } from "../shared/movement.ts";
-import { ATK, DEFUSE_RANGE, TEAM_NAMES, type GameEvent, type RemotePlayer, type Snapshot } from "../shared/protocol.ts";
+import { ATK, DEFUSE_RANGE, TEAM_NAMES, type GameEvent, type RemotePlayer, type RoundState, type Snapshot } from "../shared/protocol.ts";
 import {
   cloneSim, gunOf, newSim, RANGE, shotSeed, simulate, traceMap, traceTargets, weaponOf, type Bullet, type Cmd,
 } from "../shared/sim.ts";
 import { spread, WEAPONS } from "../shared/weapons.ts";
-import { actClick, click, explosion, footstep, gunshot, hitSound, roundEnd, setVolume, unlockAudio } from "./audio";
+import { actClick, click, explosion, footstep, gunshot, hitSound, levelUpSound, roundEnd, setVolume, unlockAudio } from "./audio";
 import { BombView } from "./bomb";
+import { effectOf, encodeLook, paintOf } from "./cosmetics";
+import { Meta } from "./locker";
+import { levelOf, Progress } from "./profile";
+import { drawCard } from "./share";
 import { spawnBots, type Bot } from "./bots";
 import { Decals, Flashes, Particles, Tracers } from "./effects";
 import { Hud } from "./hud";
@@ -82,6 +86,31 @@ function setMap(map: MapDef): void {
 setVolume(hud.settings.volume);
 hud.onSettings = (s) => setVolume(s.volume);
 
+// progress: XP, levels, unlocks and daily challenges, kept in the browser
+const progress = new Progress();
+const meta = new Meta(progress);
+view.setPaint(paintOf(progress.p.look.paint));
+progress.on({
+  xp: (g) => hud.xpPop(g.xp, g.reason),
+  level: (level, unlocked) => { hud.levelUp(level, unlocked); levelUpSound(); },
+  challenge: (c) => hud.toast(`Challenge done: ${c.text}`),
+});
+meta.onWear = (look) => {
+  view.setPaint(paintOf(look.paint));
+  if (mode?.kind === "online") mode.net.send({ type: "look", look: encodeLook(look) });
+};
+// arriving through a friend's link: double XP for the first hour
+const refParam = new URLSearchParams(location.search).get("ref")?.replace(/[^a-z0-9]/g, "") || undefined;
+let welcome = !!refParam && progress.isNew;
+if (welcome) progress.boost(60);
+/** This match so far, for the summary and the share card. */
+let match = { kills: 0, deaths: 0, heads: 0 };
+/** A small copy of the frame of one of our kills, for the share card; taken right after rendering. */
+const highlight = document.createElement("canvas");
+highlight.width = 480; highlight.height = 270;
+let wantHighlight = false, highlightAt = -Infinity, haveHighlight = false;
+let lastPhase = "", lastRound = 0;
+
 type Mode = { kind: "range"; bots: Bot[] } | { kind: "online"; net: Net };
 let mode: Mode | null = null;
 
@@ -96,7 +125,7 @@ let spawned = false; // first snapshot received
 let wantSlot = 0, lastSlot = 1, scopeOn = false, stepDist = 0;
 let act = 0, actClickIn = 0, deadAt = 0, shake = 0;
 let specId: number | null = null, specNext = false, firing = false; // whom we watch after dying
-const names = new Map<number, string>(), teams = new Map<number, number>();
+const names = new Map<number, string>(), teams = new Map<number, number>(), looks = new Map<number, string>();
 let devFire = 0, devInput = false; // dev hooks for headless checks
 let devCam: { x: number; y: number; z: number; yaw: number; pitch: number } | null = null;
 let frames = 0, fps = 0, fpsSince = performance.now(), lastFrame = performance.now(), longest = 0, longestShown = 0;
@@ -182,7 +211,8 @@ function playFx(f: Fx): void {
 
 function onSnap(s: Snapshot): void {
   if (s.round) setMap(mapById(s.round.map));
-  for (const p of s.players) { names.set(p.id, p.name); teams.set(p.id, p.team); }
+  for (const p of s.players) { names.set(p.id, p.name); teams.set(p.id, p.team); looks.set(p.id, p.look); }
+  if (s.round) roundProgress(s.round);
   // Reconcile: take the server's state for the last command it ran, replay the ones it hasn't yet.
   const before = { ...me.move.pos };
   me = cloneSim(s.you.sim);
@@ -196,6 +226,7 @@ function onSnap(s: Snapshot): void {
     pitch = 0;
   }
   if (spawned && alive && !s.you.alive) deadAt = performance.now();
+  if (!alive && s.you.alive) progress.spawned();
   spawned = true;
   alive = s.you.alive;
   hp = s.you.hp;
@@ -230,10 +261,23 @@ function onSnap(s: Snapshot): void {
     } else if (e.type === "kill") {
       hud.feed(names.get(e.killer) ?? "?", names.get(e.victim) ?? "?", e.w, e.head, e.killer === myId || e.victim === myId,
         [teams.get(e.killer) ?? 0, teams.get(e.victim) ?? 0]);
+      if (e.killer === myId && e.victim !== myId) {
+        match.kills++;
+        if (e.head) match.heads++;
+        progress.kill(e.head, e.w);
+        if (performance.now() - highlightAt > 8000) wantHighlight = true;
+      }
+      if (e.victim === myId) { match.deaths++; progress.died(); }
+      killEffect(e.killer, e.victim);
     } else if (e.type === "planted") {
       hud.notice(`Bomb planted at ${e.site}`);
+      if (e.by === myId) progress.planted();
     } else if (e.type === "defused") {
       hud.notice(`${names.get(e.by) ?? "?"} defused the bomb`);
+      if (e.by === myId) progress.defused();
+    } else if (e.type === "referral" && e.to === myId) {
+      progress.boost(60);
+      hud.toast(`${e.name} joined through your link: double XP for an hour!`);
     } else if (e.type === "exploded") {
       const at = vec(e.pos);
       particles.explosion(at);
@@ -243,7 +287,9 @@ function onSnap(s: Snapshot): void {
       explosion(Math.min(1, 14 / (d + 6)));
       shake = Math.max(shake, Math.min(1, 16 / (d + 4)));
     } else if (e.type === "roundEnd") {
-      roundEnd(mode?.kind === "online" && e.winner === mode.net.team());
+      const won = mode?.kind === "online" && e.winner === mode.net.team();
+      roundEnd(won);
+      if (won) progress.roundWon();
     } else if (e.type === "join" && e.id !== myId) {
       hud.notice(`${e.name} joined`);
     } else if (e.type === "leave") {
@@ -252,12 +298,41 @@ function onSnap(s: Snapshot): void {
   }
 }
 
+/** The killer's kill effect (confetti, stars, hearts) bursts where the victim stood. */
+function killEffect(killer: number, victim: number): void {
+  const fx = effectOf((looks.get(killer) ?? "").split(".")[2] ?? "");
+  if (!fx.colors.length || mode?.kind !== "online") return;
+  const v = victim === myId ? me.move.pos : mode.net.others().find((o) => o.id === victim);
+  if (v) particles.confetti(new THREE.Vector3(v.x, v.y + 1.3, v.z), fx.colors);
+}
+
+/** Round and match milestones: the day's first round, a new match, the end of a match. */
+function roundProgress(r: RoundState): void {
+  if (r.phase === lastPhase && r.round === lastRound) return;
+  if (r.phase === "live" && lastPhase !== "live") {
+    const bonus = progress.playedToday();
+    if (bonus) hud.toast(`Day ${progress.p.streak} in a row!`);
+    if (welcome) { hud.toast("A friend invited you: double XP for an hour!"); welcome = false; }
+  }
+  if (r.phase === "freeze" && r.round === 1) { match = { kills: 0, deaths: 0, heads: 0 }; progress.matchXp = 0; haveHighlight = false; }
+  if (r.phase === "matchover" && lastPhase && lastPhase !== "matchover" && mode?.kind === "online") {
+    const won = r.winner === mode.net.team();
+    progress.matchEnded(won);
+    meta.setLastMatch({ ...match, map: currentMap.name, won, score: mode.net.team() === 0 ? r.score : [r.score[1], r.score[0]],
+      level: levelOf(progress.p.xp).level, name: hud.name, shot: haveHighlight ? highlight : undefined });
+    hud.toast(`Match over: +${progress.matchXp} XP. Share it from the menu (Esc)`);
+  }
+  lastPhase = r.phase;
+  lastRound = r.round;
+}
+
 remotes.onStep = (at) => footstep(Math.min(0.7, 3 / (at.distanceTo(camera.position) + 3)) - 0.05);
 
 /** map: the first map of a room we open ourselves. */
 async function goOnline(room: string, map?: string): Promise<void> {
   history.replaceState(null, "", `?room=${room}`);
-  const net = new Net(room, hud.name, map);
+  meta.name = hud.name;
+  const net = new Net(room, hud.name, map, { look: encodeLook(progress.p.look), pid: progress.p.id, ref: refParam });
   mode = { kind: "online", net };
   net.onSnap = onSnap;
   net.onClose = (reason) => { hud.error(reason); document.exitPointerLock(); };
@@ -478,6 +553,12 @@ startLoop(
     outline.composite(renderer, camera);
     renderer.clearDepth();
     if (!(mode?.kind === "online" && !alive)) renderer.render(view.scene, view.camera);
+    if (wantHighlight) { // the drawing buffer is only readable in the same task as the render
+      highlight.getContext("2d")!.drawImage(renderer.domElement, 0, 0, highlight.width, highlight.height);
+      wantHighlight = false;
+      highlightAt = performance.now();
+      haveHighlight = true;
+    }
   },
 );
 
@@ -520,6 +601,7 @@ renderer.domElement.addEventListener("click", () => { if (mode && !locked()) loc
 document.addEventListener("pointerlockchange", () => {
   const room = mode?.kind === "online" ? mode.net.room : roomParam;
   hud.menu(!locked(), { room, playing: mode?.kind });
+  if (!locked()) meta.render();
 });
 
 function resize(): void {
@@ -552,6 +634,8 @@ if (import.meta.env.DEV) {
       fire: (ticks: number) => { devFire = ticks; },
       weapon: (slot: number) => { wantSlot = slot; },
       scope: (on: boolean) => { scopeOn = on; },
+      card: async () => (await drawCard({ map: "Dockyard", kills: 23, deaths: 7, heads: 9, won: true, score: [7, 4],
+        level: 12, name: "Tim", shot: haveHighlight ? highlight : undefined })).toDataURL(),
       boom: (x: number, y: number, z: number) => {
         particles.explosion(new THREE.Vector3(x, y, z));
         glow.fireball(new THREE.Vector3(x, y, z));
@@ -567,8 +651,8 @@ if (import.meta.env.DEV) {
         speed: Math.hypot(me.move.vel.x, me.move.vel.z) / MAX_SPEED, locked: locked(), fps, longestFrameMs: longestShown,
         drawCalls: renderer.info.render.calls, triangles: renderer.info.render.triangles,
         bots: mode?.kind === "range" ? mode.bots.map((b) => ({ hp: b.hp, alive: b.alive })) : [],
-        others: mode?.kind === "online" ? mode.net.others().map((o) => ({ id: o.id, name: o.name, x: o.x, z: o.z, hp: o.hp })) : [],
-        rtt: mode?.kind === "online" ? Math.round(mode.net.rtt) : 0,
+        others: mode?.kind === "online" ? mode.net.others().map((o) => ({ id: o.id, name: o.name, team: o.team, x: o.x, z: o.z, hp: o.hp })) : [],
+        rtt: mode?.kind === "online" ? Math.round(mode.net.rtt) : 0, highlight: haveHighlight,
         team: mode?.kind === "online" ? mode.net.team() : 0,
         round: mode?.kind === "online" ? mode.net.round : null,
         act,

@@ -45,14 +45,21 @@ export type Seen = { id: number; feet: Vec3; crouched: boolean };
 export type Objective = { goal: Vec3 | null; use: boolean; look: Vec3 | null };
 export const NO_OBJECTIVE: Objective = { goal: null, use: false, look: null };
 
-const FOV = (75 * Math.PI) / 180;
-const TURN_RATE = 6; // rad/s
+// Bots are deliberately easy (Tim: "very easy"): a newcomer should win fights and want another match.
+const FOV = (55 * Math.PI) / 180; // narrow: easy to flank
+const SIGHT = 35; // metres
+const TURN_RATE = 6; // rad/s, walking: slower and the bot circles its waypoints instead of reaching them
+const AIM_RATE = 3.5; // rad/s, swinging onto a target
+const REACTION: [number, number] = [1, 1.5]; // seconds before the first shot
+const SETTLE = 1; // seconds for the first aim error to fade
+const WOBBLE = 0.045; // rad of aim that never settles: misses at range, hits up close
+const HEAD_CHANCE = 0.05;
 const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 
 /**
- * A deathmatch bot. It only knows what a player could: enemies in its field of view without a wall
- * in between. Its aim starts off target and settles over ~0.4 s, it waits a human-like reaction
- * time before shooting, and it stops to fire short bursts, because moving shots are inaccurate.
+ * A bot. It only knows what a player could: enemies in its field of view without a wall in between.
+ * Its aim starts well off target, settles slowly and keeps wobbling; it waits about a second before
+ * shooting and stops to fire short bursts, because moving shots are inaccurate.
  */
 export class BotBrain {
   private path: number[] = [];
@@ -69,6 +76,7 @@ export class BotBrain {
   private chasing = false;
   private jump = false;
   private head = false;
+  private readonly phase = Math.random() * 10;
   private pathGoal: Vec3 | null = null;
   private readonly rand: () => number;
 
@@ -107,10 +115,12 @@ export class BotBrain {
       this.chasing = false;
       const aimY = target.feet.y + (target.crouched ? 0.8 : this.head ? 1.6 : 1.2);
       const dx = target.feet.x - eye.x, dz = target.feet.z - eye.z, dy = aimY - eye.y;
-      const wantYaw = Math.atan2(-dx, -dz) + this.aimError.yaw * Math.exp(-this.targetFor / 0.4);
-      const wantPitch = Math.atan2(dy, Math.hypot(dx, dz)) + this.aimError.pitch * Math.exp(-this.targetFor / 0.4);
-      cmd.yaw = yaw + Math.max(-turn, Math.min(turn, wrap(wantYaw - yaw)));
-      cmd.pitch = pitch + Math.max(-turn, Math.min(turn, wantPitch - pitch));
+      const settle = Math.exp(-this.targetFor / SETTLE), t = tick * TICK;
+      const wantYaw = Math.atan2(-dx, -dz) + this.aimError.yaw * settle + WOBBLE * Math.sin(t * 2.3 + this.phase);
+      const wantPitch = Math.atan2(dy, Math.hypot(dx, dz)) + this.aimError.pitch * settle + WOBBLE * 0.6 * Math.sin(t * 3.1);
+      const aim = AIM_RATE * TICK;
+      cmd.yaw = yaw + Math.max(-aim, Math.min(aim, wrap(wantYaw - yaw)));
+      cmd.pitch = pitch + Math.max(-aim, Math.min(aim, wantPitch - pitch));
       const onTarget = Math.abs(wrap(wantYaw - cmd.yaw)) < 0.02 && Math.abs(wantPitch - cmd.pitch) < 0.02;
 
       this.pause = Math.max(0, this.pause - TICK);
@@ -118,9 +128,9 @@ export class BotBrain {
       const still = Math.hypot(me.vel.x, me.vel.z) < MAX_SPEED * 0.3;
       if (this.targetFor >= this.reaction && onTarget && this.pause === 0 && still) {
         cmd.fire = true;
-        if (++this.burst >= 18 + Math.floor(this.rand() * 12)) { // 3-5 shots at 10 per second
+        if (++this.burst >= 10 + Math.floor(this.rand() * 9)) { // 2-3 shots at 10 per second
           this.burst = 0;
-          this.pause = 0.25 + this.rand() * 0.2;
+          this.pause = 0.8 + this.rand() * 0.5;
         }
       } else if (this.pause > 0) {
         cmd.right = Math.sin(tick / 20) > 0 ? 1 : -1; // strafe between bursts
@@ -197,7 +207,7 @@ export class BotBrain {
     for (const e of enemies) {
       const dx = e.feet.x - eye.x, dz = e.feet.z - eye.z;
       const d = Math.hypot(dx, dz);
-      if (d > 55) continue;
+      if (d > SIGHT) continue;
       const angle = Math.abs(wrap(Math.atan2(-dx, -dz) - yaw));
       if (angle > FOV && d > 3) continue; // behind us, unless they're right next to us
       const chestY = e.feet.y + (e.crouched ? 0.8 : 1.2);
@@ -209,9 +219,9 @@ export class BotBrain {
     if (id !== this.target) {
       this.target = id;
       this.targetFor = 0;
-      this.reaction = 0.3 + this.rand() * 0.15;
-      this.aimError = { yaw: (this.rand() - 0.5) * 0.25, pitch: (this.rand() - 0.5) * 0.12 };
-      this.head = this.rand() < 0.25;
+      this.reaction = REACTION[0] + this.rand() * (REACTION[1] - REACTION[0]);
+      this.aimError = { yaw: (this.rand() - 0.5) * 0.6, pitch: (this.rand() - 0.5) * 0.24 };
+      this.head = this.rand() < HEAD_CHANCE;
       this.burst = 0;
     }
   }

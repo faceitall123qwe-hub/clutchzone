@@ -28,10 +28,11 @@ export const BOMB_KILL_RADIUS = 8; // certain death inside, falls off to nothing
 export type ClientMsg =
   | { type: "input"; cmd: Cmd; viewTick: number } // viewTick: server tick the shooter was looking at
   | { type: "ping"; t: number; rtt?: number } // rtt: the client's last measured round trip, for the scoreboard
+  | { type: "look"; look: string } // changed cosmetics in the locker
   | { type: "dev"; teleport?: Vec3; yaw?: number }; // only honoured by a server started with --dev
 
 export type RemotePlayer = {
-  id: number; name: string; team: number; x: number; y: number; z: number; yaw: number; pitch: number;
+  id: number; name: string; team: number; look: string; x: number; y: number; z: number; yaw: number; pitch: number;
   crouched: boolean; alive: boolean; hp: number; weapon: number; kills: number; deaths: number; ping: number;
 };
 
@@ -44,7 +45,8 @@ export type GameEvent =
   | { type: "planted"; by: number; site: Site }
   | { type: "defused"; by: number }
   | { type: "exploded"; pos: Vec3 }
-  | { type: "roundEnd"; winner: number; reason: string };
+  | { type: "roundEnd"; winner: number; reason: string }
+  | { type: "referral"; to: number; name: string }; // name joined through the invite link of player `to`
 
 /**
  * What the round is doing. Sent when it changes; times are server ticks, so every client counts down
@@ -65,7 +67,8 @@ export type RoundState = {
 // tuples and the slowly changing roster (names, team, score, ping) only when it changes.
 export type PlayerTuple = [id: number, x: number, y: number, z: number, yaw: number, pitch: number, flags: number, hp: number,
   weapon: number];
-export type RosterEntry = [id: number, name: string, kills: number, deaths: number, ping: number, team: number];
+/** look: cosmetics as "paint.hat.effect" (validated by the client that draws them). */
+export type RosterEntry = [id: number, name: string, kills: number, deaths: number, ping: number, team: number, look: string];
 export const ALIVE = 1, CROUCHED = 2;
 
 /** act: progress of planting or defusing, 0..1 (0 when not doing either). */
@@ -87,6 +90,6 @@ export function decodePlayers(p: PlayerTuple[], roster: Map<number, RosterEntry>
   return p.map(([id, x, y, z, yaw, pitch, flags, hp, weapon]) => {
     const r = roster.get(id);
     return { id, x, y, z, yaw, pitch, hp, weapon, alive: (flags & ALIVE) !== 0, crouched: (flags & CROUCHED) !== 0,
-      name: r?.[1] ?? "…", kills: r?.[2] ?? 0, deaths: r?.[3] ?? 0, ping: r?.[4] ?? 0, team: r?.[5] ?? 0 };
+      name: r?.[1] ?? "…", kills: r?.[2] ?? 0, deaths: r?.[3] ?? 0, ping: r?.[4] ?? 0, team: r?.[5] ?? 0, look: r?.[6] ?? "" };
   });
 }

@@ -119,6 +119,12 @@ export function roundEnd(won: boolean): void {
   tone(0.15, b, b, 0.4, "triangle", 0.18);
 }
 
+/** Level up: a quick rising arpeggio. */
+export function levelUpSound(): void {
+  if (!ctx) return;
+  [523, 659, 784, 1047].forEach((f, i) => tone(0.13, f, f, 0.25, "triangle", i * 0.09));
+}
+
 /** A soft click every half second while planting or defusing. */
 export function actClick(): void {
   if (!ctx) return;

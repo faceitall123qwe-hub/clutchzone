@@ -8,7 +8,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "test": "node --test \"shared/**/*.test.ts\" \"server/**/*.test.ts\"",
+    "test": "node --test \"shared/**/*.test.ts\" \"server/**/*.test.ts\" \"src/**/*.test.ts\"",
     "server": "node server/main.ts",
     "server:dev": "node --watch server/main.ts --dev",
     "start": "npm run build && node server/main.ts",

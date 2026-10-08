@@ -95,7 +95,8 @@ wss.on("connection", (ws, req) => {
   };
   if (room.full) { send({ type: "full" }); ws.close(); return; }
 
-  const player = room.join(name, send);
+  const meta = { look: url.searchParams.get("look") ?? "", pid: url.searchParams.get("pid") ?? "", ref: url.searchParams.get("ref") ?? "" };
+  const player = room.join(name, send, undefined, undefined, meta);
   console.log(`[${roomId}] +${player.name} (${room.players.size} players)`);
   let windowStart = Date.now(), count = 0;
   ws.on("message", (data) => {

@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { CROUCH_HEIGHT, STAND_HEIGHT } from "../shared/constants.ts";
 import type { RemotePlayer } from "../shared/protocol.ts";
 import { WEAPONS } from "../shared/weapons.ts";
+import { decodeLook, paintOf, type Look } from "./cosmetics";
 import { armsKit, bombKit, Kit, legKit, OUTFITS, torsoKit, type Outfit } from "./models";
 import { toon } from "./toon";
 
@@ -10,11 +11,11 @@ import { toon } from "./toon";
 type Stance = { group: THREE.Group; aim: THREE.Group; guns: THREE.Mesh[]; muzzles: THREE.Vector3[]; legs: THREE.Group[];
   bomb: THREE.Mesh };
 
-export function stance(o: Outfit, crouched: boolean, mat: THREE.Material): Stance {
+export function stance(o: Outfit, crouched: boolean, mat: THREE.Material, look = decodeLook("")): Stance {
   const h = crouched ? CROUCH_HEIGHT : STAND_HEIGHT;
   const group = new THREE.Group();
   const k = new Kit();
-  const shoulder = torsoKit(o, h, k);
+  const shoulder = torsoKit(o, h, k, look.hat);
   group.add(k.buildSingle(mat));
   const aim = new THREE.Group();
   aim.position.set(0, shoulder, 0);
@@ -22,7 +23,7 @@ export function stance(o: Outfit, crouched: boolean, mat: THREE.Material): Stanc
   const guns: THREE.Mesh[] = [], muzzles: THREE.Vector3[] = [];
   for (let w = 0; w < WEAPONS.length; w++) {
     const gk = new Kit();
-    muzzles.push(armsKit(o, w, gk).muzzle);
+    muzzles.push(armsKit(o, w, gk, paintOf(look.paint)).muzzle);
     const mesh = gk.buildSingle(mat);
     mesh.castShadow = false; // the torso's shadow is enough; every shadow caster is another draw call
     mesh.visible = w === 0;
@@ -51,7 +52,7 @@ export function stance(o: Outfit, crouched: boolean, mat: THREE.Material): Stanc
 }
 
 type View = {
-  root: THREE.Group; stand: Stance; crouch: Stance; mat: THREE.MeshToonMaterial; team: number;
+  root: THREE.Group; stand: Stance; crouch: Stance; mat: THREE.MeshToonMaterial; team: number; look: string;
   weapon: number; alive: boolean; dying: number; phase: number; last: THREE.Vector3; hurt: number;
 };
 
@@ -70,8 +71,9 @@ export class Remotes {
 
   private create(p: RemotePlayer): View {
     const mat = toon({ vertexColors: true });
-    const o = OUTFITS[p.team];
-    const v: View = { root: new THREE.Group(), stand: stance(o, false, mat), crouch: stance(o, true, mat), mat, team: p.team,
+    const o = OUTFITS[p.team], look: Look = decodeLook(p.look);
+    const v: View = { root: new THREE.Group(), stand: stance(o, false, mat, look), crouch: stance(o, true, mat, look), mat,
+      team: p.team, look: p.look,
       weapon: 0, alive: p.alive, dying: 0, phase: 0, last: new THREE.Vector3(p.x, p.y, p.z), hurt: 0 };
     v.root.rotation.order = "YXZ"; // yaw first, then the death fall around the body's own axis
     v.root.add(v.stand.group, v.crouch.group);
@@ -87,7 +89,8 @@ export class Remotes {
     const seen = new Set<number>();
     for (const p of players) {
       let v = this.views.get(p.id);
-      if (v && v.team !== p.team) { this.remove(p.id, v); v = undefined; } // sides swapped after a match
+      // sides swapped after a match, or the roster brought their cosmetics: build them again
+      if (v && (v.team !== p.team || v.look !== p.look)) { this.remove(p.id, v); v = undefined; }
       v ??= this.create(p);
       seen.add(p.id);
       if (v.alive && !p.alive) v.dying = DEATH_TIME;
