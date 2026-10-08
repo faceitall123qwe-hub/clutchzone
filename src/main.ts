@@ -13,6 +13,7 @@ import {
 import { spread, WEAPONS } from "../shared/weapons.ts";
 import { actClick, click, explosion, footstep, gunshot, hitSound, levelUpSound, roundEnd, setVolume, unlockAudio } from "./audio";
 import { BombView } from "./bomb";
+import { api, PORTAL } from "./config";
 import { effectOf, encodeLook, paintOf } from "./cosmetics";
 import { Meta } from "./locker";
 import { levelOf, Progress } from "./profile";
@@ -89,6 +90,8 @@ hud.onSettings = (s) => setVolume(s.volume);
 // progress: XP, levels, unlocks and daily challenges, kept in the browser
 const progress = new Progress();
 const meta = new Meta(progress);
+// portals don't allow links that take players to another site: no invite links, no private rooms by link
+if (PORTAL) document.body.classList.add("portal");
 view.setPaint(paintOf(progress.p.look.paint));
 progress.on({
   xp: (g) => hud.xpPop(g.xp, g.reason),
@@ -566,7 +569,7 @@ const lock = () => void renderer.domElement.requestPointerLock();
 const randomRoom = () => Math.random().toString(36).slice(2, 8);
 async function quickPlayRoom(): Promise<string> {
   try {
-    return (await (await fetch("api/quickplay")).json()).room;
+    return (await (await fetch(api("quickplay"))).json()).room;
   } catch {
     return `pub-${randomRoom()}`;
   }
@@ -587,7 +590,7 @@ hud.on("private", () => join(randomRoom(), hud.chosenMap));
 async function refreshRooms(): Promise<void> {
   if (mode) return;
   try {
-    hud.rooms(await (await fetch("api/rooms")).json(), join);
+    hud.rooms(await (await fetch(api("rooms"))).json(), join);
   } catch { /* static hosting without the game server: no list */ }
 }
 void refreshRooms();

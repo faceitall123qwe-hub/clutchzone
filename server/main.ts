@@ -23,7 +23,8 @@ const TYPES: Record<string, string> = {
 };
 
 const json = (res: import("node:http").ServerResponse, body: unknown) => {
-  res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+  // portal builds (CrazyGames, itch.io) run on other origins and ask us for rooms
+  res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store", "Access-Control-Allow-Origin": "*" });
   res.end(JSON.stringify(body));
 };
 

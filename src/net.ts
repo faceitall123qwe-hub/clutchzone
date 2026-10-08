@@ -1,4 +1,5 @@
 import { TICK } from "../shared/constants.ts";
+import { wsUrl } from "./config";
 import {
   decodePlayers, INTERP_TICKS, type ClientMsg, type RemotePlayer, type RosterEntry, type RoundState, type ServerMsg,
   type Snapshot,
@@ -29,9 +30,8 @@ export class Net {
       this.resolveReady = resolve;
       this.rejectReady = reject;
     });
-    const proto = location.protocol === "https:" ? "wss" : "ws";
     const q = new URLSearchParams({ room, name, look: meta.look, pid: meta.pid, ...(map ? { map } : {}), ...(meta.ref ? { ref: meta.ref } : {}) });
-    this.ws = new WebSocket(`${proto}://${location.host}/ws?${q}`);
+    this.ws = new WebSocket(wsUrl(q));
     this.ws.onmessage = (e) => this.receive(JSON.parse(e.data) as ServerMsg);
     this.ws.onclose = () => this.onClose("Disconnected from the server");
     setInterval(() => this.send({ type: "ping", t: performance.now(), rtt: this.rtt }), 2000);
