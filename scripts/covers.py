@@ -15,9 +15,10 @@ POSES = [
 ]
 BEAMS = [[-1.6, 1.45, 10.2, 1.2, 1.4, 9.7], [2.0, 1.47, 9.5, -0.6, 1.42, 10.1]]
 SHOTS = {  # viewport, camera (x, y, z, yaw, pitch), fov, title size and top, how far apart the duel is
-    "landscape": ((1920, 1080), (0.1, 1.2, 12.9, 0.0, 0.05), 64, 150, 40, 1.0),
-    "portrait": ((800, 1200), (0.25, 1.3, 13.0, 0.0, 0.06), 78, 108, 50, 1.0),
-    "square": ((800, 800), (0.1, 1.2, 12.9, 0.0, 0.06), 70, 100, 30, 0.68),
+    # the title starts below the top 20%: CrazyGames puts labels over the top-left 40% x 20% of a cover
+    "landscape": ((1920, 1080), (0.1, 1.2, 12.9, 0.0, 0.05), 64, 150, 250, 1.0),
+    "portrait": ((800, 1200), (0.25, 1.3, 13.0, 0.0, 0.06), 78, 108, 270, 1.0),
+    "square": ((800, 800), (0.1, 1.2, 12.9, 0.0, 0.06), 70, 100, 180, 0.68),
 }
 out = sys.argv[1] if len(sys.argv) > 1 else "."
 with sync_playwright() as p:
