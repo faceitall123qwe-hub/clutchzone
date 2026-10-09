@@ -74,8 +74,12 @@ every map (spawns free, no spawn-to-spawn sightline, both sites reachable, defen
          that other players see, bots wearing rare ones; 3 daily challenges, a days-in-a-row bonus
    - [x] Share card after a match (stats + a frame from one of your kills), invite links with ?ref=:
          the newcomer gets double XP for an hour, the inviter too when the friend joins their room
-   - [ ] Portals (CrazyGames, Poki, itch.io) and short vertical clips (TikTok, Shorts)
-   - Phones: not now (Tim, 2026-10-08)
+   - [x] CrazyGames: SDK v3 (username, invite links, rooms, instant multiplayer, mute, gameplay start/stop),
+         submitted for Basic launch 2026-10-08, awaiting review
+   - [x] itch.io: https://tymek8191-tech.itch.io/clutchzone — plays in the page, plus the Windows app download
+   - [x] Windows app (Electron, `desktop/`), linked from the website menu
+   - [ ] Short vertical clips posted (TikTok, Shorts): videos are ready in marketing/out, need Tim's accounts
+   - Poki: not now (needs phones). Phones: not now (Tim, 2026-10-08)
 4. **Polish & launch** — real art (CC0 low-poly), sounds, second map, matchmaking list, itch.io / CrazyGames.
 
 ## Netcode plan (phase 2)
@@ -123,4 +127,8 @@ The first-person gun, drawn in its own pass, gets inverted-hull outlines instead
 | 2026-10-08 | Maps are data (boxes, spawns, sites, decor, theme); the theme picks textures, sky and light | One renderer and one server for every map; new maps need no code, only boxes |
 | 2026-10-08 | Bots plant at least 1 m inside a site; site areas reach the walls | A bot stopping 0.6 m from a spot at a site's edge was outside the site and never planted |
 | 2026-10-08 | All shaders compiled when a map loads (hidden effects made visible for the compile) | The first tracer or flash compiling mid-fight froze the game for 100-200 ms on Windows |
+| 2026-10-08 | Menu in two columns on wide screens; Quick play near the top | CrazyGames plays in frames down to 800x450 and wants gameplay within one click |
+| 2026-10-08 | Portal builds play on clutchzone.pro's server (CORS *, no origin check); CrazyGames' SDK only in its build | One server for every audience; other sites never load their script |
+| 2026-10-08 | Cover titles start below the top 20% | CrazyGames puts labels over the top-left 40% x 20% of a cover |
+| 2026-10-09 | Windows app = Electron around the same build, served as app://game/, playing on clutchzone.pro | No second codebase; invite links point at clutchzone.pro so app and browser players meet |
 | 2026-10-07 | Units in metres, CS movement constants converted (1 Hammer unit ≈ 2.54 cm) | Familiar feel |

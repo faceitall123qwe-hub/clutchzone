@@ -28,8 +28,13 @@ E (hold) — plant or defuse the bomb · Tab — scoreboard · Esc — menu
 **Platform:** desktop (mouse and keyboard). **Orientation:** landscape. **Language:** English.
 **Multiplayer:** yes, up to 10 players per room (4 v 4 filled with bots). **Age:** PEGI 12 style cartoon violence, no blood gore.
 
+**Where:** CrazyGames (submitted 2026-10-08), itch.io https://tymek8191-tech.itch.io/clutchzone (browser + Windows).
+
 **Files:**
 - Game: `marketing/clutchzone-web.zip` (`npm run build:portal`, then zip `dist-portal`; plays on clutchzone.pro's server)
+- itch.io: the same build with `VITE_PORTAL=itch` (no CrazyGames SDK), zipped; embed 960x540 with a fullscreen button
+- Windows: `marketing/clutchzone-windows.zip` (`npm run build:desktop`, then zip `desktop/out/Clutchzone-win32-x64`
+  into a `Clutchzone/` folder); unsigned, so Windows SmartScreen asks "Run anyway" the first time
 - Covers: `marketing/covers/cover-landscape.png` (1920x1080), `cover-portrait.png` (800x1200), `cover-square.png` (800x800)
 - Preview videos: `marketing/out/crazygames-landscape.mp4` (1920x1080), `crazygames-portrait.mp4` (1080x1620)
 
