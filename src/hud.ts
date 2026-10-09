@@ -62,6 +62,7 @@ const html = `
       <dt>Weapons</dt><dd>1 2 3 · Q · wheel</dd><dt>Reload</dt><dd>R</dd><dt>Plant / defuse</dt><dd>hold E</dd>
       <dt>Scores</dt><dd>Tab</dd>
     </dl></details>
+    <a id="getapp" href="https://tymek8191-tech.itch.io/clutchzone" target="_blank" rel="noopener">Download for Windows</a>
   </div></div>
 </div>`;
 
