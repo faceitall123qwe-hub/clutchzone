@@ -94,6 +94,7 @@ const progress = new Progress();
 const meta = new Meta(progress);
 // portals don't allow links that take players to another site: no invite links, no private rooms by link
 if (PORTAL) document.body.classList.add("portal");
+if (PORTAL === "desktop") document.body.classList.add("invites");
 view.setPaint(paintOf(progress.p.look.paint));
 progress.on({
   xp: (g) => hud.xpPop(g.xp, g.reason),

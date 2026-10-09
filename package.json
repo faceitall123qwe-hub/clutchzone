@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "build:portal": "tsc --noEmit && vite build --mode portal --outDir dist-portal",
+    "build:desktop": "tsc --noEmit && vite build --mode desktop --outDir desktop/game --emptyOutDir && npm --prefix desktop run package",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "node --test \"shared/**/*.test.ts\" \"server/**/*.test.ts\" \"src/**/*.test.ts\"",

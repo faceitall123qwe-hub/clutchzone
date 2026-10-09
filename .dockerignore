@@ -4,3 +4,5 @@ screenshots
 .scratch
 .git
 *.log
+**/node_modules
+desktop

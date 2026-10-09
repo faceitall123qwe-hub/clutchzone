@@ -1,5 +1,5 @@
 import { MAPS } from "../shared/maps.ts";
-import { PORTAL } from "./config";
+import { PORTAL, SERVER } from "./config";
 import { TEAM_NAMES, type RemotePlayer } from "../shared/protocol.ts";
 import { WEAPONS } from "../shared/weapons.ts";
 
@@ -83,7 +83,8 @@ export class Hud {
   private slot = -1;
   readonly settings: Settings = { ...DEFAULTS };
   /** The link that brings a friend into a room; null where we may not link out (a portal without invites). */
-  linkFor: (room: string) => string | null = (room) => (PORTAL ? null : `${location.origin}${location.pathname}?room=${room}`);
+  linkFor: (room: string) => string | null = (room) =>
+    PORTAL === "desktop" ? `${SERVER}/?room=${room}` : PORTAL ? null : `${location.origin}${location.pathname}?room=${room}`;
   onSettings: (s: Settings) => void = () => {};
 
   constructor() {

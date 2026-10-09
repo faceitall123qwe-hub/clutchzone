@@ -1,0 +1,16 @@
+{
+  "name": "clutchzone-desktop",
+  "productName": "Clutchzone",
+  "version": "0.1.0",
+  "description": "Clutchzone, the cartoon tactical shooter, as a Windows app",
+  "private": true,
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "package": "electron-packager . Clutchzone --platform=win32 --arch=x64 --out=out --overwrite --asar --icon=icon.ico --ignore=^/out --ignore=^/prune.cjs --app-copyright=\"Tim Bazylewicz\" --win32metadata.CompanyName=\"Tim Bazylewicz\" --win32metadata.ProductName=Clutchzone --win32metadata.FileDescription=Clutchzone && node prune.cjs"
+  },
+  "devDependencies": {
+    "@electron/packager": "^20.3.0",
+    "electron": "^44.7.0"
+  }
+}

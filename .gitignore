@@ -7,3 +7,5 @@ dist-portal/
 *.zip
 marketing/raw/
 marketing/out/
+desktop/game/
+desktop/out/
