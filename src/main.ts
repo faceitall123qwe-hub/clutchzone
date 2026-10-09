@@ -21,6 +21,7 @@ import { Meta } from "./locker";
 import { levelOf, Progress } from "./profile";
 import { drawCard } from "./share";
 import { spawnBots, type Bot } from "./bots";
+import { loadSoldiers, Soldier } from "./characters";
 import { Decals, Flashes, Particles, Tracers } from "./effects";
 import { Hud } from "./hud";
 import { axes, isDown, locked, takeMouse } from "./input";
@@ -75,6 +76,15 @@ function warmUp(): void {
   renderer.compile(view.scene, view.camera);
   for (const o of hidden) o.visible = false;
 }
+
+// the soldiers' models: one hidden copy stays in the scene so warmUp() compiles their shader up front
+void loadSoldiers().then(() => {
+  view.setPaint(paintOf(progress.p.look.paint), true); // the kit's guns in first person too
+  const warm = new Soldier(0);
+  warm.root.visible = false;
+  scene.add(warm.root);
+  warmUp();
+});
 
 /** Rooms change maps between matches: rebuild what's drawn; the simulation reads currentMap.boxes. */
 function setMap(map: MapDef): void {
@@ -760,7 +770,7 @@ if (import.meta.env.DEV) {
       // store covers and trailer frames: pose soldiers, hide the interface, show only the title
       stage: async (poses: import("./stage").Pose[], beams: number[][] = []) => {
         const { stage } = await import("./stage");
-        stage(scene, poses, beams.map(([a, b, c, d, e, f]) => [new THREE.Vector3(a, b, c), new THREE.Vector3(d, e, f)]));
+        await stage(scene, poses, beams.map(([a, b, c, d, e, f]) => [new THREE.Vector3(a, b, c), new THREE.Vector3(d, e, f)]));
       },
       clean: (fovDeg: number | null) => {
         devFov = fovDeg;

@@ -1,36 +1,39 @@
 import * as THREE from "three";
+import { hitboxes } from "../shared/hitbox.ts";
+import { loadSoldiers, Soldier, soldiersLoaded } from "./characters";
 import { decodeLook } from "./cosmetics";
 import { starTexture } from "./effects";
-import { OUTFITS } from "./models";
-import { stance } from "./remote";
-import { toon } from "./toon";
 
-/** A posed soldier for marketing shots: where, facing, team, cosmetics, weapon, aim pitch, stride. */
+/** A posed soldier for marketing shots: where, facing, team, cosmetics, weapon, aim pitch, running or not. */
 export type Pose = { x: number; y?: number; z: number; yaw: number; team: number; look: string; gun?: number; pitch?: number;
-  stride?: number; crouch?: boolean; firing?: boolean };
+  stride?: number; crouch?: boolean; firing?: boolean; time?: number; boxes?: boolean; clip?: string };
 
 /**
  * Dev only: soldiers frozen mid-fight, with muzzle flashes and tracers, for the store covers and the
- * first frame of the trailer. Returns a function that removes them.
+ * first frame of the trailer. A non-zero stride means running; time picks the frame of the animation.
  */
-export function stage(scene: THREE.Scene, poses: Pose[], tracers: [THREE.Vector3, THREE.Vector3][] = []): () => void {
+export async function stage(scene: THREE.Scene, poses: Pose[], tracers: [THREE.Vector3, THREE.Vector3][] = []): Promise<() => void> {
+  if (!soldiersLoaded()) await loadSoldiers();
   const group = new THREE.Group();
   const flash = new THREE.SpriteMaterial({ map: starTexture(), depthWrite: false, transparent: true });
   for (const p of poses) {
-    const s = stance(OUTFITS[p.team], !!p.crouch, toon({ vertexColors: true }), decodeLook(p.look));
-    const root = new THREE.Group();
-    root.add(s.group);
-    root.position.set(p.x, p.y ?? 0, p.z);
-    root.rotation.y = p.yaw;
-    s.guns.forEach((g, i) => (g.visible = i === (p.gun ?? 0)));
-    s.aim.rotation.x = p.pitch ?? 0;
-    s.legs[0].rotation.x = p.stride ?? 0;
-    s.legs[1].rotation.x = -(p.stride ?? 0);
-    group.add(root);
+    const s = new Soldier(p.team, decodeLook(p.look));
+    s.root.position.set(p.x, p.y ?? 0, p.z);
+    s.root.rotation.y = p.yaw;
+    s.setWeapon(p.gun ?? 0);
+    const state = { speed: p.stride ? 6 : 0, crouched: !!p.crouch, alive: true, airborne: false, pitch: p.pitch ?? 0 };
+    s.update(0.2, state); // let the cross-fade finish
+    s.update(p.time ?? 0.3, state);
+    if (p.clip) s.hold(p.clip, p.time ?? 0.3);
+    group.add(s.root);
+    if (p.boxes) // what the server shoots at, to line the model up with
+      for (const { part, box } of hitboxes({ x: p.x, y: p.y ?? 0, z: p.z }, !!p.crouch))
+        group.add(new THREE.Box3Helper(new THREE.Box3(new THREE.Vector3(...box.min), new THREE.Vector3(...box.max)),
+          part === "head" ? 0xff2020 : part === "body" ? 0x20ff40 : 0x2080ff));
     if (p.firing) {
-      root.updateMatrixWorld(true);
+      s.root.updateMatrixWorld(true);
       const star = new THREE.Sprite(flash);
-      star.position.copy(s.muzzles[p.gun ?? 0]).applyMatrix4(s.aim.matrixWorld);
+      s.muzzle(star.position);
       star.scale.setScalar(0.9);
       group.add(star);
     }

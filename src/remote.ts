@@ -2,12 +2,12 @@ import * as THREE from "three";
 import { CROUCH_HEIGHT, STAND_HEIGHT } from "../shared/constants.ts";
 import type { RemotePlayer } from "../shared/protocol.ts";
 import { WEAPONS } from "../shared/weapons.ts";
-import { decodeLook, paintOf, type Look } from "./cosmetics";
-import { armsKit, bombKit, Kit, legKit, OUTFITS, torsoKit, type Outfit } from "./models";
-import { toon } from "./toon";
+import { Soldier, soldiersLoaded } from "./characters";
+import { decodeLook, paintOf } from "./cosmetics";
+import { armsKit, bombKit, Kit, legKit, torsoKit, type Outfit } from "./models";
 
-/** One stance (standing or crouched): torso, legs that swing from the hips, and arms + gun that tilt
- * with the view pitch around the shoulders. Sized to the hitboxes, so what you see is what you hit. */
+/** The procedural soldier, now only the shooting range's targets: one stance (standing or crouched),
+ * legs that swing from the hips, arms + gun that tilt with the pitch. Sized to the old hitboxes. */
 type Stance = { group: THREE.Group; aim: THREE.Group; guns: THREE.Mesh[]; muzzles: THREE.Vector3[]; legs: THREE.Group[];
   bomb: THREE.Mesh };
 
@@ -52,12 +52,12 @@ export function stance(o: Outfit, crouched: boolean, mat: THREE.Material, look =
 }
 
 type View = {
-  root: THREE.Group; stand: Stance; crouch: Stance; mat: THREE.MeshToonMaterial; team: number; look: string;
-  weapon: number; alive: boolean; dying: number; phase: number; last: THREE.Vector3; hurt: number;
+  soldier: Soldier; team: number; look: string; alive: boolean; dying: number; phase: number; last: THREE.Vector3; hurt: number;
 };
 
-const DEATH_TIME = 0.7;
+const DEATH_TIME = 1.6; // the death animation, then the body disappears
 
+/** Other players: animated soldiers from characters.ts, following the snapshots. */
 export class Remotes {
   private readonly views = new Map<number, View>();
   private readonly scene: THREE.Scene;
@@ -70,20 +70,16 @@ export class Remotes {
   }
 
   private create(p: RemotePlayer): View {
-    const mat = toon({ vertexColors: true });
-    const o = OUTFITS[p.team], look: Look = decodeLook(p.look);
-    const v: View = { root: new THREE.Group(), stand: stance(o, false, mat, look), crouch: stance(o, true, mat, look), mat,
-      team: p.team, look: p.look,
-      weapon: 0, alive: p.alive, dying: 0, phase: 0, last: new THREE.Vector3(p.x, p.y, p.z), hurt: 0 };
-    v.root.rotation.order = "YXZ"; // yaw first, then the death fall around the body's own axis
-    v.root.add(v.stand.group, v.crouch.group);
-    this.scene.add(v.root);
+    const v: View = { soldier: new Soldier(p.team, decodeLook(p.look)), team: p.team, look: p.look,
+      alive: p.alive, dying: 0, phase: 0, last: new THREE.Vector3(p.x, p.y, p.z), hurt: 0 };
+    this.scene.add(v.soldier.root);
     this.views.set(p.id, v);
     return v;
   }
 
   /** carrier: who has the bomb on their back; hidden: the player we're watching through their eyes. */
   update(players: RemotePlayer[], carrier: number | null = null, hidden: number | null = null): void {
+    if (!soldiersLoaded()) return; // still downloading the models: nobody is drawn for that moment
     const now = performance.now(), dt = Math.min(0.1, (now - this.lastTime) / 1000);
     this.lastTime = now;
     const seen = new Set<number>();
@@ -96,50 +92,38 @@ export class Remotes {
       if (v.alive && !p.alive) v.dying = DEATH_TIME;
       v.alive = p.alive;
       v.dying = Math.max(0, v.dying - dt);
-      const fall = p.alive ? 0 : 1 - (v.dying / DEATH_TIME) ** 2;
-      v.root.visible = (p.alive || v.dying > 0) && p.id !== hidden;
-      v.stand.bomb.visible = v.crouch.bomb.visible = p.id === carrier;
-      v.root.position.set(p.x, p.y - fall * 0.15, p.z);
-      v.root.rotation.set(fall * Math.PI * 0.48, p.yaw, 0);
-
-      if (p.weapon !== v.weapon && WEAPONS[p.weapon]) {
-        for (const s of [v.stand, v.crouch]) s.guns.forEach((g, i) => (g.visible = i === p.weapon));
-        v.weapon = p.weapon;
-      }
-      v.stand.group.visible = !p.crouched;
-      v.crouch.group.visible = p.crouched;
-      const s = p.crouched ? v.crouch : v.stand;
-      s.aim.rotation.x = p.alive ? p.pitch : 0;
+      const s = v.soldier;
+      s.root.visible = (p.alive || v.dying > 0) && p.id !== hidden;
+      s.bomb.visible = p.id === carrier;
+      s.root.position.set(p.x, p.y, p.z);
+      s.root.rotation.y = p.yaw;
+      if (WEAPONS[p.weapon]) s.setWeapon(p.weapon);
 
       const speed = dt > 0 ? Math.hypot(p.x - v.last.x, p.z - v.last.z) / dt : 0;
+      const airborne = dt > 0 && Math.abs(p.y - v.last.y) / dt > 0.8;
       v.last.set(p.x, p.y, p.z);
       const stride = Math.floor(v.phase / Math.PI);
       v.phase += dt * speed * 1.9;
-      if (p.alive && !p.crouched && speed > 3.6 && speed < 12 && Math.floor(v.phase / Math.PI) !== stride) this.onStep(v.root.position);
-      const swing = Math.sin(v.phase) * Math.min(1, speed / 4) * (p.crouched ? 0.25 : 0.6);
-      s.legs[0].rotation.x = swing;
-      s.legs[1].rotation.x = -swing;
+      if (p.alive && !p.crouched && speed > 3.6 && speed < 12 && Math.floor(v.phase / Math.PI) !== stride) this.onStep(s.root.position);
+      if (s.root.visible) s.update(dt, { speed, crouched: p.crouched, alive: p.alive, airborne, pitch: p.pitch });
 
       v.hurt = Math.max(0, v.hurt - dt);
-      v.mat.emissive.setRGB(v.hurt > 0 ? 0.5 : 0, 0, 0);
+      s.material.emissive.setRGB(v.hurt > 0 ? 0.5 : 0, 0, 0);
     }
     for (const [id, v] of this.views) if (!seen.has(id)) this.remove(id, v);
   }
 
   private remove(id: number, v: View): void {
-    this.scene.remove(v.root);
-    v.root.traverse((o) => { if (o instanceof THREE.Mesh) o.geometry.dispose(); });
-    v.mat.dispose();
+    this.scene.remove(v.soldier.root);
+    v.soldier.dispose();
     this.views.delete(id);
   }
 
   /** Muzzle of the gun as drawn now, or false if we don't draw that player. */
   muzzle(id: number, out: THREE.Vector3): boolean {
     const v = this.views.get(id);
-    if (!v || !v.root.visible) return false;
-    const s = v.crouch.group.visible ? v.crouch : v.stand;
-    s.aim.updateWorldMatrix(true, false);
-    out.copy(s.muzzles[v.weapon]).applyMatrix4(s.aim.matrixWorld);
+    if (!v || !v.soldier.root.visible) return false;
+    v.soldier.muzzle(out);
     return true;
   }
 

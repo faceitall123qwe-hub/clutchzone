@@ -204,7 +204,7 @@ export function torsoKit(o: Outfit, h: number, k: Kit, hat = "helmet"): number {
 }
 
 /** What's on the head; y: the top of the head. Purely cosmetic: the head hitbox doesn't change. */
-function hatKit(hat: string, o: Outfit, y: number, k: Kit): void {
+export function hatKit(hat: string, o: Outfit, y: number, k: Kit): void {
   if (hat === "beanie") {
     k.box(0xe2433a, [0.24, 0.1, 0.25], [0, y + 0.03, 0.005]);
     k.box(0xf4f4f4, [0.25, 0.04, 0.26], [0, y - 0.03, 0.005]);
