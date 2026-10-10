@@ -86,8 +86,10 @@ export class Kit {
     return group;
   }
 
-  /** Everything in one mesh with one material (third-person models). */
+  /** Everything in one mesh with one material (third-person models); "glass" parts get glow 1 for glowMaterial. */
   buildSingle(material: THREE.Material): THREE.Mesh {
+    for (const p of this.parts)
+      p.geo.setAttribute("glow", new THREE.BufferAttribute(new Float32Array(p.geo.getAttribute("position").count).fill(p.surface === "glass" ? 1 : 0), 1));
     const mesh = new THREE.Mesh(mergeGeometries(this.parts.map((p) => p.geo)), material);
     for (const p of this.parts) p.geo.dispose();
     mesh.castShadow = true;
@@ -183,26 +185,6 @@ export const OUTFITS: Outfit[] = [
   { uniform: 0x4d9cf0, vest: 0x1f4f9a, pants: 0x283a5c, helmet: 0x2f7fe0, skin: 0xe8b088 },
 ];
 
-/** Shooting-range targets: hard to miss. */
-export const TARGET_OUTFIT: Outfit = { uniform: 0xf0483c, vest: 0x9c1f1a, pants: 0x3a4152, helmet: 0xc8241c, skin: 0xffc79a };
-
-/** Soldier without legs, fitted to the hitboxes (feet at 0, facing -Z). h: standing or crouched height.
- * Returns the shoulder height, where the arms and gun pivot with the view pitch. */
-export function torsoKit(o: Outfit, h: number, k: Kit, hat = "helmet"): number {
-  const legsTop = h * 0.45, headBottom = h - 0.28;
-  k.box(o.pants, [0.42, 0.16, 0.24], [0, legsTop + 0.06, 0]);
-  const chest = headBottom - legsTop - 0.12;
-  k.box(o.uniform, [0.46, chest, 0.26], [0, legsTop + 0.12 + chest / 2, 0]);
-  k.box(o.vest, [0.5, chest * 0.7, 0.3], [0, legsTop + 0.14 + chest * 0.4, 0]);
-  k.box(o.vest, [0.12, 0.08, 0.04], [-0.12, legsTop + 0.12 + chest * 0.3, -0.16]); // pouches
-  k.box(o.vest, [0.12, 0.08, 0.04], [0.12, legsTop + 0.12 + chest * 0.3, -0.16]);
-  k.box(o.skin, [0.1, 0.06, 0.1], [0, headBottom + 0.01, 0]); // neck
-  k.box(o.skin, [0.21, 0.22, 0.22], [0, headBottom + 0.13, 0]); // head
-  k.box(0x1d1d1d, [0.17, 0.04, 0.02], [0, headBottom + 0.16, -0.112]); // goggles band
-  hatKit(hat, o, headBottom + 0.24, k);
-  return headBottom - 0.06;
-}
-
 /** What's on the head; y: the top of the head. Purely cosmetic: the head hitbox doesn't change. */
 export function hatKit(hat: string, o: Outfit, y: number, k: Kit): void {
   if (hat === "beanie") {
@@ -248,19 +230,6 @@ export function armsKit(o: Outfit, gun: number, k: Kit, paint: Paint = PAINTS[0]
   k.beam(o.uniform, 0.1, 0.1, [-0.24, 0, 0.02], [g.x + lx - 0.04, g.y + ly - 0.05, g.z + lz + 0.05]);
   k.box(GLOVE, [0.07, 0.07, 0.1], [g.x + lx - 0.01, g.y + ly - 0.03, g.z + lz]);
   return { ...spec, muzzle: spec.muzzle.clone().add(g) };
-}
-
-/** One leg hanging from the hip at the origin. Crouched legs kneel: thigh forward, shin down. */
-export function legKit(o: Outfit, h: number, crouched: boolean, k: Kit): void {
-  const legsTop = h * 0.45;
-  if (crouched) {
-    k.box(o.pants, [0.17, 0.17, 0.4], [0, 0, -0.14]);
-    k.box(o.pants, [0.16, legsTop - 0.08, 0.17], [0, -(legsTop - 0.08) / 2, -0.3]);
-    k.box(0x2b2722, [0.17, 0.1, 0.26], [0, -legsTop + 0.05, -0.33]);
-    return;
-  }
-  k.box(o.pants, [0.17, legsTop - 0.1, 0.19], [0, -(legsTop - 0.1) / 2, 0]);
-  k.box(0x2b2722, [0.18, 0.12, 0.27], [0, -legsTop + 0.06, -0.03]);
 }
 
 /** The bomb: a charge with a keypad and a light, about the size of a shoebox. Origin at its bottom centre. */

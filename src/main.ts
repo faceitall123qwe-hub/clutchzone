@@ -21,7 +21,7 @@ import { Meta } from "./locker";
 import { levelOf, Progress } from "./profile";
 import { drawCard } from "./share";
 import { spawnBots, type Bot } from "./bots";
-import { loadSoldiers, Soldier } from "./characters";
+import { Soldier, TEAM_GLOW } from "./characters";
 import { Decals, Flashes, Particles, Tracers } from "./effects";
 import { Hud } from "./hud";
 import { axes, isDown, locked, takeMouse } from "./input";
@@ -51,7 +51,7 @@ let world: World = buildWorld(scene, currentMap);
 const camera = new THREE.PerspectiveCamera(80, innerWidth / innerHeight, 0.05, 250);
 camera.rotation.order = "YXZ";
 const view = new ViewModel();
-const outline = new Outline();
+const outline = new Outline(TEAM_GLOW);
 outline.setInk(world.neon);
 view.resize(innerWidth / innerHeight);
 const hud = new Hud();
@@ -78,14 +78,10 @@ function warmUp(): void {
   for (const o of hidden) o.visible = false;
 }
 
-// the soldiers' models: one hidden copy stays in the scene so warmUp() compiles their shader up front
-void loadSoldiers().then(() => {
-  view.setPaint(paintOf(progress.p.look.paint), true); // the kit's guns in first person too
-  const warm = new Soldier(0);
-  warm.root.visible = false;
-  scene.add(warm.root);
-  warmUp();
-});
+// a hidden trooper stays in the scene so warmUp() compiles their shaders before anyone appears
+const warm = new Soldier(0);
+warm.root.visible = false;
+scene.add(warm.root);
 
 /** Rooms change maps between matches: rebuild what's drawn; the simulation reads currentMap.boxes. */
 function setMap(map: MapDef): void {
@@ -772,7 +768,7 @@ if (import.meta.env.DEV) {
       // store covers and trailer frames: pose soldiers, hide the interface, show only the title
       stage: async (poses: import("./stage").Pose[], beams: number[][] = []) => {
         const { stage } = await import("./stage");
-        await stage(scene, poses, beams.map(([a, b, c, d, e, f]) => [new THREE.Vector3(a, b, c), new THREE.Vector3(d, e, f)]));
+        stage(scene, poses, beams.map(([a, b, c, d, e, f]) => [new THREE.Vector3(a, b, c), new THREE.Vector3(d, e, f)]));
       },
       clean: (fovDeg: number | null) => {
         devFov = fovDeg;

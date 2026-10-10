@@ -1,63 +1,16 @@
 import * as THREE from "three";
-import { CROUCH_HEIGHT, STAND_HEIGHT } from "../shared/constants.ts";
 import type { RemotePlayer } from "../shared/protocol.ts";
 import { WEAPONS } from "../shared/weapons.ts";
-import { Soldier, soldiersLoaded } from "./characters";
-import { decodeLook, paintOf } from "./cosmetics";
-import { armsKit, bombKit, Kit, legKit, torsoKit, type Outfit } from "./models";
-
-/** The procedural soldier, now only the shooting range's targets: one stance (standing or crouched),
- * legs that swing from the hips, arms + gun that tilt with the pitch. Sized to the old hitboxes. */
-type Stance = { group: THREE.Group; aim: THREE.Group; guns: THREE.Mesh[]; muzzles: THREE.Vector3[]; legs: THREE.Group[];
-  bomb: THREE.Mesh };
-
-export function stance(o: Outfit, crouched: boolean, mat: THREE.Material, look = decodeLook("")): Stance {
-  const h = crouched ? CROUCH_HEIGHT : STAND_HEIGHT;
-  const group = new THREE.Group();
-  const k = new Kit();
-  const shoulder = torsoKit(o, h, k, look.hat);
-  group.add(k.buildSingle(mat));
-  const aim = new THREE.Group();
-  aim.position.set(0, shoulder, 0);
-  group.add(aim);
-  const guns: THREE.Mesh[] = [], muzzles: THREE.Vector3[] = [];
-  for (let w = 0; w < WEAPONS.length; w++) {
-    const gk = new Kit();
-    muzzles.push(armsKit(o, w, gk, paintOf(look.paint)).muzzle);
-    const mesh = gk.buildSingle(mat);
-    mesh.castShadow = false; // the torso's shadow is enough; every shadow caster is another draw call
-    mesh.visible = w === 0;
-    aim.add(mesh);
-    guns.push(mesh);
-  }
-  const legs = [-0.11, 0.11].map((x) => {
-    const pivot = new THREE.Group();
-    pivot.position.set(x, h * 0.45, 0);
-    const lk = new Kit();
-    legKit(o, h, crouched, lk);
-    const leg = lk.buildSingle(mat);
-    leg.castShadow = false;
-    pivot.add(leg);
-    group.add(pivot);
-    return pivot;
-  });
-  const bk = new Kit();
-  bombKit(bk);
-  const bomb = bk.buildSingle(mat);
-  bomb.position.set(0, h * 0.62, 0.16); // strapped to the back
-  bomb.rotation.x = Math.PI / 2;
-  bomb.visible = false;
-  group.add(bomb);
-  return { group, aim, guns, muzzles, legs, bomb };
-}
+import { Soldier } from "./characters";
+import { decodeLook } from "./cosmetics";
 
 type View = {
   soldier: Soldier; team: number; look: string; alive: boolean; dying: number; phase: number; last: THREE.Vector3; hurt: number;
 };
 
-const DEATH_TIME = 1.6; // the death animation, then the body disappears
+const DEATH_TIME = 1.6; // falling over, lights going out, then the body disappears
 
-/** Other players: animated soldiers from characters.ts, following the snapshots. */
+/** Other players: troopers from characters.ts, following the snapshots. */
 export class Remotes {
   private readonly views = new Map<number, View>();
   private readonly scene: THREE.Scene;
@@ -79,7 +32,6 @@ export class Remotes {
 
   /** carrier: who has the bomb on their back; hidden: the player we're watching through their eyes. */
   update(players: RemotePlayer[], carrier: number | null = null, hidden: number | null = null): void {
-    if (!soldiersLoaded()) return; // still downloading the models: nobody is drawn for that moment
     const now = performance.now(), dt = Math.min(0.1, (now - this.lastTime) / 1000);
     this.lastTime = now;
     const seen = new Set<number>();
@@ -99,13 +51,16 @@ export class Remotes {
       s.root.rotation.y = p.yaw;
       if (WEAPONS[p.weapon]) s.setWeapon(p.weapon);
 
-      const speed = dt > 0 ? Math.hypot(p.x - v.last.x, p.z - v.last.z) / dt : 0;
+      const vx = dt > 0 ? (p.x - v.last.x) / dt : 0, vz = dt > 0 ? (p.z - v.last.z) / dt : 0, speed = Math.hypot(vx, vz);
       const airborne = dt > 0 && Math.abs(p.y - v.last.y) / dt > 0.8;
       v.last.set(p.x, p.y, p.z);
+      // how the movement splits between where they face (-Z turned by yaw) and their right
+      const fx = -Math.sin(p.yaw), fz = -Math.cos(p.yaw), forward = speed > 0 ? (vx * fx + vz * fz) / speed : 1;
+      const right = speed > 0 ? (vx * -fz + vz * fx) / speed : 0;
       const stride = Math.floor(v.phase / Math.PI);
       v.phase += dt * speed * 1.9;
       if (p.alive && !p.crouched && speed > 3.6 && speed < 12 && Math.floor(v.phase / Math.PI) !== stride) this.onStep(s.root.position);
-      if (s.root.visible) s.update(dt, { speed, crouched: p.crouched, alive: p.alive, airborne, pitch: p.pitch });
+      if (s.root.visible) s.update(dt, { speed, forward, right, crouched: p.crouched, alive: p.alive, airborne, pitch: p.pitch });
 
       v.hurt = Math.max(0, v.hurt - dt);
       s.material.emissive.setRGB(v.hurt > 0 ? 0.5 : 0, 0, 0);
@@ -124,11 +79,12 @@ export class Remotes {
     const v = this.views.get(id);
     if (!v || !v.soldier.root.visible) return false;
     v.soldier.muzzle(out);
+    v.soldier.kick(); // asked for at every shot they fire
     return true;
   }
 
   hurt(id: number): void {
     const v = this.views.get(id);
-    if (v) v.hurt = 0.1;
+    if (v) { v.hurt = 0.1; v.soldier.flinch(); }
   }
 }

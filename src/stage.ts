@@ -1,19 +1,18 @@
 import * as THREE from "three";
 import { hitboxes } from "../shared/hitbox.ts";
-import { loadSoldiers, Soldier, soldiersLoaded } from "./characters";
+import { Soldier } from "./characters";
 import { decodeLook } from "./cosmetics";
 import { starTexture } from "./effects";
 
 /** A posed soldier for marketing shots: where, facing, team, cosmetics, weapon, aim pitch, running or not. */
 export type Pose = { x: number; y?: number; z: number; yaw: number; team: number; look: string; gun?: number; pitch?: number;
-  stride?: number; crouch?: boolean; firing?: boolean; time?: number; boxes?: boolean; clip?: string };
+  stride?: number; speed?: number; crouch?: boolean; firing?: boolean; time?: number; boxes?: boolean };
 
 /**
  * Dev only: soldiers frozen mid-fight, with muzzle flashes and tracers, for the store covers and the
- * first frame of the trailer. A non-zero stride means running; time picks the frame of the animation.
+ * first frame of the trailer. A non-zero stride means running; time picks the moment of the stride.
  */
-export async function stage(scene: THREE.Scene, poses: Pose[], tracers: [THREE.Vector3, THREE.Vector3][] = []): Promise<() => void> {
-  if (!soldiersLoaded()) await loadSoldiers();
+export function stage(scene: THREE.Scene, poses: Pose[], tracers: [THREE.Vector3, THREE.Vector3][] = []): () => void {
   const group = new THREE.Group();
   const flash = new THREE.SpriteMaterial({ map: starTexture(), depthWrite: false, transparent: true });
   for (const p of poses) {
@@ -21,10 +20,8 @@ export async function stage(scene: THREE.Scene, poses: Pose[], tracers: [THREE.V
     s.root.position.set(p.x, p.y ?? 0, p.z);
     s.root.rotation.y = p.yaw;
     s.setWeapon(p.gun ?? 0);
-    const state = { speed: p.stride ? 6 : 0, crouched: !!p.crouch, alive: true, airborne: false, pitch: p.pitch ?? 0 };
-    s.update(0.2, state); // let the cross-fade finish
-    s.update(p.time ?? 0.3, state);
-    if (p.clip) s.hold(p.clip, p.time ?? 0.3);
+    const state = { speed: p.speed ?? (p.stride ? 6 : 0), forward: 1, right: 0, crouched: !!p.crouch, alive: true, airborne: false, pitch: p.pitch ?? 0 };
+    for (let t = 0; t < (p.time ?? 0.6); t += 1 / 60) s.update(1 / 60, state); // settle into the pose
     group.add(s.root);
     if (p.boxes) // what the server shoots at, to line the model up with
       for (const { part, box } of hitboxes({ x: p.x, y: p.y ?? 0, z: p.z }, !!p.crouch))

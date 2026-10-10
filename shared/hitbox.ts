@@ -4,14 +4,11 @@ import * as C from "./constants.ts";
 export type Part = "head" | "body" | "legs";
 export const DAMAGE_SCALE: Record<Part, number> = { head: 4, body: 1, legs: 0.75 };
 
-/**
- * Three stacked boxes from the feet up. The cartoon soldiers have big heads: the head box covers the
- * face and helmet, the top 28% of the height, but not the helmet's wide rim.
- */
+/** Three stacked boxes from the feet up; head is narrower than the body. */
 export function hitboxes(feet: Vec3, crouched: boolean): { part: Part; box: Box }[] {
   const h = crouched ? C.CROUCH_HEIGHT : C.STAND_HEIGHT;
-  const headSize = h * 0.28, r = C.PLAYER_RADIUS, hr = 0.2;
-  const headBottom = feet.y + h - headSize;
+  const headSize = 0.24, r = C.PLAYER_RADIUS, hr = headSize / 2;
+  const headBottom = feet.y + h - headSize - 0.04;
   const legsTop = feet.y + h * 0.45;
   const b = (y1: number, y2: number, rad: number): Box => ({
     min: [feet.x - rad, y1, feet.z - rad], max: [feet.x + rad, y2, feet.z + rad],
