@@ -20,7 +20,7 @@ function place(p: Player, x: number, z: number, yaw = 0) {
 const hide = (p: Player) => { p.sim.move.pos = { x: 0, y: -50, z: 0 }; p.sim.move.vel = { x: 0, y: 0, z: 0 }; };
 
 test("public rooms are topped up with bots to 4 v 4 while people are there", () => {
-  const room = new Room("pub-x", { bots: true });
+  const room = new Room("pub-x", { bots: true, map: "outpost" });
   const a = human(room, "a");
   assert.equal(bots(room).length, 7);
   const b = human(room, "b");
@@ -34,7 +34,7 @@ test("public rooms are topped up with bots to 4 v 4 while people are there", () 
 });
 
 test("private rooms get no bots", () => {
-  const room = new Room("friends", {});
+  const room = new Room("friends", { map: "outpost" });
   human(room, "a");
   assert.equal(bots(room).length, 0);
 });
@@ -42,7 +42,7 @@ test("private rooms get no bots", () => {
 test("a bot finds and kills a player standing in the open", (ctx) => {
   // easy bots miss most shots, so the time to kill has a long tail: a fixed seed keeps the test repeatable
   ctx.mock.method(Math, "random", mulberry32(1));
-  const room = new Room("pub-y", { bots: true });
+  const room = new Room("pub-y", { bots: true, map: "outpost" });
   const h = human(room, "target", DEF);
   for (const b of bots(room).filter((b) => b.team === DEF || b !== bots(room).find((x) => x.team === ATK))) room.leave(b.id);
   const [bot] = bots(room);
@@ -56,7 +56,7 @@ test("a bot finds and kills a player standing in the open", (ctx) => {
 });
 
 test("bots don't see or shoot through walls", () => {
-  const room = new Room("pub-z", { bots: true });
+  const room = new Room("pub-z", { bots: true, map: "outpost" });
   const h = human(room, "hidden", DEF);
   for (const b of bots(room).filter((b) => b.team === DEF || b !== bots(room).find((x) => x.team === ATK))) room.leave(b.id);
   const [bot] = bots(room);
@@ -76,7 +76,7 @@ test("bots don't see or shoot through walls", () => {
 });
 
 test("attacking bots take the bomb to a site and plant it", () => {
-  const room = new Room("pub-a", { bots: true });
+  const room = new Room("pub-a", { bots: true, map: "outpost" });
   const h = human(room, "defender", DEF);
   for (const b of bots(room).filter((b) => b.team === DEF)) room.leave(b.id);
   live(room);
@@ -88,7 +88,7 @@ test("attacking bots take the bomb to a site and plant it", () => {
 });
 
 test("defending bots go to a planted bomb and defuse it", () => {
-  const room = new Room("pub-d", { bots: true });
+  const room = new Room("pub-d", { bots: true, map: "outpost" });
   const h = human(room, "attacker", ATK);
   for (const b of bots(room).filter((b) => b.team === ATK)) room.leave(b.id);
   live(room);

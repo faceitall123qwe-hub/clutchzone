@@ -12,7 +12,7 @@ const base: Omit<Cmd, "seq"> = { forward: 0, right: 0, yaw: 0, pitch: 0, jump: f
   fire: false, reload: false, slot: 0, aim: false, use: false };
 
 function setup() {
-  const room = new Room("t");
+  const room = new Room("t", { map: "outpost" });
   const inbox = new Map<number, ServerMsg[]>();
   const join = (name: string, team?: number) => {
     const box: ServerMsg[] = [];
@@ -401,8 +401,9 @@ test("late joiners watch until the next round; first to 7 wins, then sides swap 
   secs(room, P.MATCH_END_TIME + 0.1);
   assert.deepEqual([room.round.phase, room.round.round, room.round.score], ["freeze", 1, [0, 0]]);
   assert.deepEqual([a.team, b.team, late.team, late.alive], [DEF, ATK, DEF, true]);
-  assert.deepEqual([room.map.id, room.round.map], ["dockyard", "dockyard"], "the next map in the rotation");
-  assert.ok(Math.abs(a.sim.move.pos.z) > 20 && Math.abs(a.sim.move.pos.z) < 27, "spawned on the new map");
+  assert.deepEqual([room.map.id, room.round.map], ["plaza", "plaza"], "the first map of the rotation after the range");
+  const spawns = [...room.map.spawns.attackers, ...room.map.spawns.defenders];
+  assert.ok(spawns.some((s) => Math.hypot(s.x - a.sim.move.pos.x, s.z - a.sim.move.pos.z) < 0.5), "spawned on the new map");
 });
 
 test("a shot judged at the present tick uses the newest positions, not ones a second old", () => {
@@ -420,7 +421,7 @@ test("a shot judged at the present tick uses the newest positions, not ones a se
 });
 
 test("cosmetics travel in the roster; junk is replaced; the locker can change them mid-game", () => {
-  const room = new Room("t");
+  const room = new Room("t", { map: "outpost" });
   const inbox: ServerMsg[] = [];
   const a = room.join("a", (m) => inbox.push(typeof m === "string" ? JSON.parse(m) : m), undefined, ATK, { look: "gold.crown.stars" });
   const b = room.join("b", () => {}, undefined, DEF, { look: "<script>" });
@@ -433,7 +434,7 @@ test("cosmetics travel in the roster; junk is replaced; the locker can change th
 });
 
 test("joining through someone's invite link tells them, if they're in the room", () => {
-  const room = new Room("t");
+  const room = new Room("t", { map: "outpost" });
   const inbox: ServerMsg[] = [];
   const host = room.join("host", (m) => inbox.push(typeof m === "string" ? JSON.parse(m) : m), undefined, ATK, { pid: "abcd1234" });
   room.join("friend", () => {}, undefined, DEF, { pid: "zzzz9999", ref: "abcd1234" });
