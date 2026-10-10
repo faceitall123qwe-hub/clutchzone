@@ -130,7 +130,8 @@ export class Hud {
   }
 
   /** Menu in its pre-game or paused state. room: the room we're in or about to join. */
-  menu(show: boolean, opts: { room?: string; playing?: "online" | "range" } = {}): void {
+  /** map: the room's map, once we're in it. */
+  menu(show: boolean, opts: { room?: string; playing?: "online" | "range"; map?: string } = {}): void {
     this.el("start").style.display = show ? "grid" : "none";
     const link = opts.room ? this.linkFor(opts.room) : null;
     (this.el("link") as HTMLInputElement).value = link ?? "";
@@ -140,7 +141,7 @@ export class Hud {
     this.el("privrow").style.display = opts.playing ? "none" : "flex";
     this.el("rooms").style.display = opts.playing ? "none" : "grid";
     this.el("sub").textContent = opts.playing === "range" ? "Shooting range · offline"
-      : opts.room ? `Room ${opts.room} · map Outpost` : "Browser tactical shooter";
+      : opts.room ? `Room ${opts.room}${opts.map ? ` · map ${opts.map}` : ""}` : "Browser tactical shooter";
   }
 
   error(text: string): void {

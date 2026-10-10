@@ -1,9 +1,11 @@
 """Cuts the raw takes from scripts/footage.py into store previews and vertical shorts.
 
-    py -3.14 scripts/edit.py      # run from the project folder; reads marketing/raw, writes marketing/out
+    py -3.14 scripts/edit.py [previews] [shorts] [shorts-2]   # run from the project folder (default: all);
+                                                            # reads marketing/raw, writes marketing/out
 """
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
@@ -101,15 +103,21 @@ def end_card(path, cover):
     img.save(path)
 
 
-def short(name, takes, hooks, limit=13.0):
+def frame(take, at, dst):
+    """One frame of a take, as a background picture."""
+    ff("-ss", f"{at:.2f}", "-i", str(normalised(take)), "-frames:v", "1", str(dst))
+    return dst
+
+
+def short(name, takes, hooks, limit=13.0, card_bg="marketing/covers/cover-portrait.png"):
     """TikTok / Shorts / Reels: 1080 x 1920 with game sound, a hook on screen, an end card."""
     parts = []
     for i, (t, s, d) in enumerate(pick(takes, limit)):
         parts.append(TMP / f"{name}-{i}.mp4")
         clip(normalised(t), s, d, parts[-1], "scale=1080:1920", True)
-    card = TMP / "endcard.png"
+    card = TMP / f"endcard-{Path(card_bg).stem}.png"
     if not card.exists():
-        end_card(card, "marketing/covers/cover-portrait.png")
+        end_card(card, card_bg)
     parts.append(TMP / f"{name}-end.mp4")
     still(card, 2.5, parts[-1], "scale=1080:1920", True)
     body = TMP / f"{name}-body.mp4"
@@ -126,11 +134,33 @@ def short(name, takes, hooks, limit=13.0):
 
 LAND = ["dockyard-land", "frostbite-land", "outpost-land"]
 VERT = ["dockyard-vert", "frostbite-vert", "outpost-vert"]
-preview("crazygames-landscape", LAND, "marketing/covers/cover-landscape.png", (1920, 1080), "")
-preview("crazygames-portrait", VERT, "marketing/covers/cover-portrait.png", (1080, 1620), "crop=1080:1620:0:150,")
-short("short-1-browser", VERT, [("THIS SHOOTER|RUNS IN YOUR|BROWSER", 0, 2.8), ("NO DOWNLOAD.|FREE.", 6.5, 9)])
-short("short-2-pov", ["frostbite-vert", "outpost-vert", "dockyard-vert"],
-      [("POV: YOU FOUND|A FREE SHOOTER|IN YOUR BROWSER", 0, 3)])
-short("short-3-hats", ["outpost-vert", "dockyard-vert", "frostbite-vert"],
-      [("LEVEL UP|UNLOCK HATS|BEAT YOUR FRIENDS", 0, 3), ("PLAYS ON ANY|LAPTOP", 7, 9.5)])
+TOWN = ["plaza-vert", "reactor-shotgun-vert", "skyline-knife-vert"]  # the colourful town maps, new weapons
+
+
+def previews():
+    preview("crazygames-landscape", LAND, "marketing/covers/cover-landscape.png", (1920, 1080), "")
+    preview("crazygames-portrait", VERT, "marketing/covers/cover-portrait.png", (1080, 1620), "crop=1080:1620:0:150,")
+
+
+def shorts():
+    short("short-1-browser", VERT, [("THIS SHOOTER|RUNS IN YOUR|BROWSER", 0, 2.8), ("NO DOWNLOAD.|FREE.", 6.5, 9)])
+    short("short-2-pov", ["frostbite-vert", "outpost-vert", "dockyard-vert"],
+          [("POV: YOU FOUND|A FREE SHOOTER|IN YOUR BROWSER", 0, 3)])
+    short("short-3-hats", ["outpost-vert", "dockyard-vert", "frostbite-vert"],
+          [("LEVEL UP|UNLOCK HATS|BEAT YOUR FRIENDS", 0, 3), ("PLAYS ON ANY|LAPTOP", 7, 9.5)])
+
+
+def shorts_2():
+    bg = frame("plaza-vert", 8.5, TMP / "town-bg.png")
+    short("short-4-knife", ["skyline-knife-vert"], [("KNIFE ONLY|IN A FREE|BROWSER SHOOTER", 0, 3), ("NO DOWNLOAD", 7, 9.5)],
+          card_bg=bg)
+    short("short-5-shotgun", ["reactor-shotgun-vert"], [("ONE SHOT.|ONE KILL.", 0, 2.8), ("FREE IN YOUR|BROWSER", 7, 9.5)],
+          card_bg=bg)
+    short("short-6-new-maps", TOWN, [("NEW MAPS.|NEW GUNS.|STILL FREE.", 0, 3), ("PLAY IT IN|YOUR BROWSER", 7, 9.5)],
+          card_bg=bg)
+
+
+JOBS = {"previews": previews, "shorts": shorts, "shorts-2": shorts_2}
+for job in sys.argv[1:] or JOBS:
+    JOBS[job]()
 print("done:", *sorted(p.name for p in OUT.glob("*.mp4")))

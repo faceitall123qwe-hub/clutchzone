@@ -2,7 +2,7 @@
 recorded (no HUD, no cursor). Writes <out>.webm and <out>.json with the kill times (seconds into the video).
 Needs `npm run dev` and `npm run server:dev`.
 
-    py -3.14 scripts/footage.py marketing/raw/dock-land 1920x1080 dockyard 45
+    py -3.14 scripts/footage.py marketing/raw/dock-land 1920x1080 dockyard 45 [slot:distance:head:strafe,...]
 """
 import base64
 import json
@@ -14,6 +14,8 @@ from playwright.sync_api import sync_playwright
 out, size, map_id, seconds = sys.argv[1], sys.argv[2], sys.argv[3], float(sys.argv[4])
 w, h = map(int, size.split("x"))
 WEAPONS = [(0, 9, False, 1), (0, 11, False, -1), (1, 6, True, 1), (0, 8, False, 0)]  # slot, distance, aim at head, strafe
+if len(sys.argv) > 5:
+    WEAPONS = [(int(s), float(d), h == "1", float(r)) for s, d, h, r in (w.split(":") for w in sys.argv[5].split(","))]
 
 with sync_playwright() as p:
     b = p.chromium.launch(headless=False, args=["--window-size=1300,800", "--disable-backgrounding-occluded-windows",

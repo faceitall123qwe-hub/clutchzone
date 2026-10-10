@@ -147,9 +147,10 @@ let devCam: { x: number; y: number; z: number; yaw: number; pitch: number } | nu
 let devFov: number | null = null, devNoGun = false; // marketing shots
 let autoAim: { head: boolean; strafe: number } | null = null; // dev: plays itself, smoothly, for gameplay footage
 
-/** Dev autopilot: swing the view onto the nearest enemy in sight like a player would, then fire. */
-function autoPilot(dt: number): { fire: boolean; right: number } {
-  if (!autoAim || mode?.kind !== "online" || !alive) return { fire: false, right: 0 };
+/** Dev autopilot: swing the view onto the nearest enemy in sight like a player would, then fire
+ * (with a knife, run up to them first). */
+function autoPilot(dt: number): { fire: boolean; right: number; forward: number } {
+  if (!autoAim || mode?.kind !== "online" || !alive) return { fire: false, right: 0, forward: 0 };
   const team = mode.net.team(), eyeY = me.move.pos.y + eyeHeight(me.move);
   let best: RemotePlayer | null = null, bestD = Infinity;
   for (const o of mode.net.others()) {
@@ -158,7 +159,7 @@ function autoPilot(dt: number): { fire: boolean; right: number } {
     const dist = Math.hypot(d.x, d.z);
     if (dist < bestD && traceMap({ o: { ...me.move.pos, y: eyeY }, d }, currentMap.boxes, 1).t >= 1) { best = o; bestD = dist; }
   }
-  if (!best) return { fire: false, right: autoAim.strafe };
+  if (!best) return { fire: false, right: autoAim.strafe, forward: 0 };
   const aimY = best.y + (best.crouched ? 0.9 : autoAim.head ? 1.6 : 1.25);
   const dx = best.x - me.move.pos.x, dz = best.z - me.move.pos.z;
   const wantYaw = Math.atan2(-dx, -dz), wantPitch = Math.atan2(aimY - eyeY, Math.hypot(dx, dz));
@@ -166,7 +167,8 @@ function autoPilot(dt: number): { fire: boolean; right: number } {
   yaw += wrap(wantYaw - yaw) * k;
   pitch += (wantPitch - pitch) * k;
   const on = Math.abs(wrap(wantYaw - yaw)) < 0.02 && Math.abs(wantPitch - pitch) < 0.02;
-  return { fire: on, right: on ? 0 : autoAim.strafe };
+  const forward = weaponOf(me).melee && bestD > 1.4 && Math.abs(wrap(wantYaw - yaw)) < 0.3 ? 1 : 0;
+  return { fire: on && (!weaponOf(me).melee || bestD < 2), right: on ? 0 : autoAim.strafe, forward };
 }
 let frames = 0, fps = 0, fpsSince = performance.now(), lastFrame = performance.now(), longest = 0, longestShown = 0;
 
@@ -426,7 +428,7 @@ startLoop(
     const idle = { forward: 0, right: 0, jump: false, crouch: false, walk: false, fire: false, reload: false, use: false,
       slot: -1, lastWeapon: false, wheel: 0, scope: false };
     const a = locked() || devInput ? axes() : idle;
-    if (autoAim) { const ap = autoPilot(dt); a.fire = ap.fire; a.right = ap.right; }
+    if (autoAim) { const ap = autoPilot(dt); a.fire = ap.fire; a.right = ap.right; a.forward = ap.forward; }
 
     if (a.slot >= 0 && a.slot !== wantSlot) { lastSlot = wantSlot; wantSlot = a.slot; }
     if (a.lastWeapon) [wantSlot, lastSlot] = [lastSlot, wantSlot];
@@ -661,7 +663,7 @@ renderer.domElement.addEventListener("click", () => { if (mode && !locked()) loc
 document.addEventListener("pointerlockchange", () => {
   gameplay();
   const room = mode?.kind === "online" ? mode.net.room : roomParam;
-  hud.menu(!locked(), { room, playing: mode?.kind });
+  hud.menu(!locked(), { room, playing: mode?.kind, map: mode?.kind === "online" ? currentMap.name : undefined });
   if (!locked()) meta.render();
 });
 
