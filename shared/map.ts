@@ -1,7 +1,7 @@
 import type { Box } from "./collision.ts";
 
 /** What a box is made of: decides its texture and how bullets look when they hit it. */
-export type Kind = "floor" | "wall" | "block" | "crate" | "metal" | "step" | "container" | "wood";
+export type Kind = "floor" | "wall" | "block" | "crate" | "metal" | "step" | "container" | "wood" | "barrel";
 /** tint: multiplies the texture colour (containers in different paints). */
 export type MapBox = Box & { kind: Kind; tint?: number };
 export type Spawn = { x: number; z: number; yaw: number };

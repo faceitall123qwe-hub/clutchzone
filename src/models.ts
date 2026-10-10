@@ -200,44 +200,55 @@ export function gunKit(id: number, k = new Kit(), c: Paint = PAINTS[0]): GunSpec
   return { muzzle: new THREE.Vector3(0, 0.01, -0.79), rightHand: [0, -0.1, 0.1], leftHand: [0, -0.04, -0.32] };
 }
 
-const GLOVE = 0x2b2d36, SLEEVE = 0xd9a95c;
+const GLOVE = 0x2b2d36;
 
-/** First-person hands and forearms reaching the gun from outside the screen. */
-export function handsKit(spec: GunSpec, k: Kit): void {
+/** First-person hands and forearms reaching the gun from outside the screen; sleeve: the team's colour. */
+export function handsKit(spec: GunSpec, k: Kit, sleeve: number): void {
   const [rx, ry, rz] = spec.rightHand;
   k.box(GLOVE, [0.07, 0.085, 0.09], [rx + 0.02, ry - 0.01, rz + 0.005]);
   k.limb(GLOVE, 0.036, [rx + 0.03, ry - 0.03, rz + 0.04], [rx + 0.06, ry - 0.07, rz + 0.1]);
-  k.limb(SLEEVE, 0.045, [rx + 0.06, ry - 0.07, rz + 0.1], [rx + 0.17, ry - 0.24, rz + 0.42]);
+  k.limb(sleeve, 0.045, [rx + 0.06, ry - 0.07, rz + 0.1], [rx + 0.17, ry - 0.24, rz + 0.42]);
   if (!spec.leftHand) return;
   const [lx, ly, lz] = spec.leftHand;
   k.box(GLOVE, [0.075, 0.06, 0.1], [lx - 0.015, ly - 0.035, lz]);
   k.limb(GLOVE, 0.036, [lx - 0.03, ly - 0.06, lz + 0.03], [lx - 0.06, ly - 0.1, lz + 0.08]);
-  k.limb(SLEEVE, 0.045, [lx - 0.06, ly - 0.1, lz + 0.08], [lx - 0.2, ly - 0.32, lz + 0.35]);
+  k.limb(sleeve, 0.045, [lx - 0.06, ly - 0.1, lz + 0.08], [lx - 0.2, ly - 0.32, lz + 0.35]);
 }
 
 export type Outfit = { uniform: number; vest: number; pants: number; helmet: number; skin: number };
 export const OUTFITS: Outfit[] = [
-  { uniform: 0xf2a33a, vest: 0xb4561e, pants: 0x6b4428, helmet: 0xf07c22, skin: 0xffc79a },
-  { uniform: 0x4d9cf0, vest: 0x1f4f9a, pants: 0x283a5c, helmet: 0x2f7fe0, skin: 0xe8b088 },
+  { uniform: 0xff8a2e, vest: 0xc9501e, pants: 0x4a3a30, helmet: 0xff6a1a, skin: 0xffcfa6 },
+  { uniform: 0x3d8bff, vest: 0x1e56b8, pants: 0x27324d, helmet: 0x2a6ff0, skin: 0xf0b98e },
 ];
 
 /** Shooting-range targets: hard to miss. */
 export const TARGET_OUTFIT: Outfit = { uniform: 0xf0483c, vest: 0x9c1f1a, pants: 0x3a4152, helmet: 0xc8241c, skin: 0xffc79a };
 
 /** Soldier without legs, fitted to the hitboxes (feet at 0, facing -Z). h: standing or crouched height.
- * Returns the shoulder height, where the arms and gun pivot with the view pitch. */
+ * A big friendly head with a face: it reads from far away, and it's only a few cm wider than the
+ * head hitbox. Returns the shoulder height, where the arms and gun pivot with the view pitch. */
 export function torsoKit(o: Outfit, h: number, k: Kit, hat = "helmet"): number {
-  const legsTop = h * 0.45, headBottom = h - 0.28;
-  k.box(o.pants, [0.42, 0.16, 0.24], [0, legsTop + 0.06, 0]);
-  const chest = headBottom - legsTop - 0.12;
-  k.box(o.uniform, [0.46, chest, 0.26], [0, legsTop + 0.12 + chest / 2, 0]);
-  k.box(o.vest, [0.5, chest * 0.7, 0.3], [0, legsTop + 0.14 + chest * 0.4, 0]);
-  k.box(o.vest, [0.12, 0.08, 0.04], [-0.12, legsTop + 0.12 + chest * 0.3, -0.16]); // pouches
-  k.box(o.vest, [0.12, 0.08, 0.04], [0.12, legsTop + 0.12 + chest * 0.3, -0.16]);
-  k.box(o.skin, [0.1, 0.06, 0.1], [0, headBottom + 0.01, 0]); // neck
-  k.box(o.skin, [0.21, 0.22, 0.22], [0, headBottom + 0.13, 0]); // head
-  k.box(0x1d1d1d, [0.17, 0.04, 0.02], [0, headBottom + 0.16, -0.112]); // goggles band
-  hatKit(hat, o, headBottom + 0.24, k);
+  const legsTop = h * 0.45, headBottom = h - 0.32;
+  k.box(o.pants, [0.44, 0.14, 0.26], [0, legsTop + 0.05, 0]); // hips
+  k.box(0x2b2722, [0.46, 0.05, 0.28], [0, legsTop + 0.13, 0]); // belt
+  k.box(0xe0b850, [0.07, 0.05, 0.01], [0, legsTop + 0.13, -0.142]);
+  const chest = headBottom - legsTop - 0.13;
+  k.box(o.uniform, [0.5, chest, 0.28], [0, legsTop + 0.13 + chest / 2, 0]);
+  k.box(o.vest, [0.54, chest * 0.62, 0.32], [0, legsTop + 0.15 + chest * 0.36, 0]);
+  for (const x of [-0.13, 0.13]) k.box(o.vest, [0.13, 0.09, 0.04], [x, legsTop + 0.14 + chest * 0.26, -0.175]); // pouches
+  k.box(o.uniform, [0.3, 0.05, 0.3], [0, headBottom - 0.005, 0]); // collar
+  const hy = headBottom + 0.16;
+  k.box(o.skin, [0.35, 0.32, 0.32], [0, hy, 0]); // head
+  for (const s of [-1, 1]) {
+    k.box(0x1c1c22, [0.056, 0.072, 0.012], [0.076 * s, hy, -0.162]); // eyes
+    k.box(0xffffff, [0.02, 0.02, 0.012], [0.076 * s + 0.014, hy + 0.02, -0.165]);
+    k.box(0x3a2a20, [0.085, 0.022, 0.012], [0.078 * s, hy + 0.07, -0.162], [0, 0, 0.18 * s]); // brows
+    k.box(o.skin, [0.035, 0.08, 0.07], [0.185 * s, hy - 0.01, 0]); // ears
+  }
+  k.box(0xb5654a, [0.08, 0.018, 0.012], [0, hy - 0.085, -0.162]); // mouth
+  const before = k.parts.length;
+  hatKit(hat, o, h, k);
+  for (const p of k.parts.slice(before)) p.geo.translate(0, -h, 0).scale(1.45, 1.45, 1.45).translate(0, h, 0); // made for a smaller head
   return headBottom - 0.06;
 }
 
@@ -281,12 +292,12 @@ export function armsKit(o: Outfit, gun: number, k: Kit, paint: Paint = PAINTS[0]
   const g = new THREE.Vector3(0.12, -0.08, -0.32); // gun origin relative to the shoulders
   for (const p of k.parts.slice(before)) p.geo.translate(g.x, g.y, g.z);
   const [rx, ry, rz] = spec.rightHand;
-  k.beam(o.uniform, 0.1, 0.1, [0.24, 0, 0.02], [g.x + rx + 0.06, g.y + ry - 0.02, g.z + rz + 0.08]);
-  k.box(GLOVE, [0.07, 0.09, 0.09], [g.x + rx + 0.02, g.y + ry, g.z + rz]);
+  k.beam(o.uniform, 0.12, 0.12, [0.27, 0, 0.02], [g.x + rx + 0.06, g.y + ry - 0.02, g.z + rz + 0.08]);
+  k.box(GLOVE, [0.09, 0.1, 0.1], [g.x + rx + 0.02, g.y + ry, g.z + rz]);
   // the left hand on the gun, or (a knife) hanging by the side
   const [lx, ly, lz] = spec.leftHand ?? [-0.42, -0.24, 0.32];
-  k.beam(o.uniform, 0.1, 0.1, [-0.24, 0, 0.02], [g.x + lx - 0.04, g.y + ly - 0.05, g.z + lz + 0.05]);
-  k.box(GLOVE, [0.07, 0.07, 0.1], [g.x + lx - 0.01, g.y + ly - 0.03, g.z + lz]);
+  k.beam(o.uniform, 0.12, 0.12, [-0.27, 0, 0.02], [g.x + lx - 0.04, g.y + ly - 0.05, g.z + lz + 0.05]);
+  k.box(GLOVE, [0.09, 0.09, 0.11], [g.x + lx - 0.01, g.y + ly - 0.03, g.z + lz]);
   return { ...spec, muzzle: spec.muzzle.clone().add(g) };
 }
 
@@ -299,8 +310,9 @@ export function legKit(o: Outfit, h: number, crouched: boolean, k: Kit): void {
     k.box(0x2b2722, [0.17, 0.1, 0.26], [0, -legsTop + 0.05, -0.33]);
     return;
   }
-  k.box(o.pants, [0.17, legsTop - 0.1, 0.19], [0, -(legsTop - 0.1) / 2, 0]);
-  k.box(0x2b2722, [0.18, 0.12, 0.27], [0, -legsTop + 0.06, -0.03]);
+  k.box(o.pants, [0.19, legsTop - 0.12, 0.21], [0, -(legsTop - 0.12) / 2, 0]);
+  k.box(0x2b2722, [0.2, 0.14, 0.3], [0, -legsTop + 0.07, -0.035]); // boots
+  k.box(0x6b5640, [0.205, 0.03, 0.305], [0, -legsTop + 0.015, -0.035]);
 }
 
 /** The bomb: a charge with a keypad and a light, about the size of a shoebox. Origin at its bottom centre. */

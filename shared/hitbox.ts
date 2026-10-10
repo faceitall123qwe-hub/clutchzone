@@ -7,7 +7,7 @@ export const DAMAGE_SCALE: Record<Part, number> = { head: 4, body: 1, legs: 0.75
 /** Three stacked boxes from the feet up; head is narrower than the body. */
 export function hitboxes(feet: Vec3, crouched: boolean): { part: Part; box: Box }[] {
   const h = crouched ? C.CROUCH_HEIGHT : C.STAND_HEIGHT;
-  const headSize = 0.24, r = C.PLAYER_RADIUS, hr = headSize / 2;
+  const headSize = 0.28, r = C.PLAYER_RADIUS, hr = headSize / 2;
   const headBottom = feet.y + h - headSize - 0.04;
   const legsTop = feet.y + h * 0.45;
   const b = (y1: number, y2: number, rad: number): Box => ({

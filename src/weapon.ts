@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { WEAPONS } from "../shared/weapons.ts";
 import { starTexture } from "./effects";
 import { PAINTS, type Paint } from "./cosmetics";
-import { gunKit, handsKit, Kit, viewMaterials, type GunSpec } from "./models";
+import { gunKit, handsKit, Kit, OUTFITS, viewMaterials, type GunSpec } from "./models";
 import { addHull } from "./toon";
 
 type ViewGun = { group: THREE.Group; spec: GunSpec; rest: THREE.Vector3; kick: { up: number; back: number }; inward: number };
@@ -24,6 +24,7 @@ export class ViewModel {
   readonly camera = new THREE.PerspectiveCamera(55, 1, 0.01, 10);
   private guns: ViewGun[] = [];
   private paint: Paint | null = null;
+  private sleeve = OUTFITS[0].uniform;
   private readonly mats = viewMaterials();
   private readonly flash: THREE.Mesh;
   private readonly flashLight = new THREE.PointLight(0xffc070, 0, 3);
@@ -49,10 +50,22 @@ export class ViewModel {
     this.scene.add(key);
   }
 
+  /** Sleeves in our team's colour. */
+  setTeam(team: number): void {
+    const sleeve = OUTFITS[team]?.uniform ?? OUTFITS[0].uniform;
+    if (sleeve === this.sleeve || !this.paint) return;
+    this.sleeve = sleeve;
+    this.build(this.paint);
+  }
+
   /** Builds the guns again in another paint. */
   setPaint(paint: Paint): void {
     if (paint === this.paint) return;
     this.paint = paint;
+    this.build(paint);
+  }
+
+  private build(paint: Paint): void {
     for (const g of this.guns) {
       this.scene.remove(g.group);
       g.group.traverse((o) => { if (o instanceof THREE.Mesh && o !== this.flash) o.geometry.dispose(); });
@@ -60,7 +73,7 @@ export class ViewModel {
     this.guns = REST.map((rest, id) => {
       const k = new Kit();
       const spec = gunKit(id, k, paint);
-      handsKit(spec, k);
+      handsKit(spec, k, this.sleeve);
       const group = k.build(this.mats);
       for (const part of [...group.children]) addHull(part as THREE.Mesh, 0.0022); // the world gets its outlines in a pass
       group.visible = id === this.slot;

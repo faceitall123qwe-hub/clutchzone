@@ -185,7 +185,7 @@ function wallImpact(o: THREE.Vector3, end: THREE.Vector3, hole = true): void {
   const n = new THREE.Vector3(...hit.normal);
   if (hole) decals.add(end, n);
   const kind = currentMap.boxes[hit.index].kind;
-  particles.impact(end, n, kind === "metal" || kind === "container");
+  particles.impact(end, n, kind === "metal" || kind === "container" || kind === "barrel");
 }
 
 /** Where our tracer starts: on screen it must leave the muzzle of the first-person gun, which is drawn
@@ -469,6 +469,7 @@ startLoop(
     flashes.update(dt);
     hud.update(dt);
     const w = weaponOf(me), gun = gunOf(me);
+    view.setTeam(mode?.kind === "online" ? mode.net.team() : 0);
     view.update(dt, me.slot, speed, 1 - me.draw / w.drawTime, gun.reloading > 0 ? 1 - gun.reloading / w.reloadTime : 0,
       [mx, my], aiming());
   },

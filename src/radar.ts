@@ -2,7 +2,7 @@ import type { Kind, MapDef } from "../shared/map.ts";
 
 const SIZE = 168; // pixels
 const COLORS: Partial<Record<Kind, string>> = {
-  wall: "#8c7c5f", block: "#7d6f56", crate: "#6b4a2b", metal: "#4d6b70", step: "#5d5444", wood: "#6e5236",
+  wall: "#8c7c5f", block: "#7d6f56", crate: "#6b4a2b", metal: "#4d6b70", step: "#5d5444", wood: "#6e5236", barrel: "#3f6fa8",
 };
 const TEAM = ["#f0b84a", "#6fb0ff"];
 
