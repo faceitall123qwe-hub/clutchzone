@@ -50,7 +50,7 @@ export function axes() {
   };
   // presses, not holds: weapon choice and the scope toggle
   const keys = {
-    slot: ["Digit1", "Digit2", "Digit3"].findIndex((k) => pressed.has(k)),
+    slot: ["Digit1", "Digit2", "Digit3", "Digit4", "Digit5", "Digit6"].findIndex((k) => pressed.has(k)),
     lastWeapon: pressed.has("KeyQ"),
     wheel,
     scope: pressed.has("Mouse2"),

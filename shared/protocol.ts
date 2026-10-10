@@ -37,7 +37,7 @@ export type RemotePlayer = {
 };
 
 export type GameEvent =
-  | { type: "shot"; id: number; w: number; o: Vec3; end: Vec3 } // w: weapon id
+  | { type: "shot"; id: number; w: number; o: Vec3; end: Vec3; p?: number } // w: weapon id; p: pellet, if not the first
   | { type: "hit"; by: number; target: number; part: Part; damage: number }
   | { type: "kill"; killer: number; victim: number; head: boolean; w: number } // killer -1, w -1: the bomb
   | { type: "join"; id: number; name: string }

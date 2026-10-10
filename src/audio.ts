@@ -77,6 +77,19 @@ export function gunshot(weapon: number, volume = 1): void {
     burst(0.35 * volume, 900, 0.9, 0.5);
     tone(0.7 * volume, 110, 30, 0.3);
     if (volume === 1) bolt();
+  } else if (weapon === 3) { // SMG: light and quick
+    burst(0.38 * volume, 3400, 0.09, 1.0);
+    tone(0.3 * volume, 180, 70, 0.06);
+  } else if (weapon === 4) { // shotgun: a deep boom, then the pump
+    burst(0.8 * volume, 1800, 0.3, 0.6);
+    tone(0.8 * volume, 90, 35, 0.25);
+    if (volume === 1) {
+      burst(0.15, 1500, 0.06, 1.2, "bandpass", 0.45);
+      burst(0.15, 2200, 0.06, 1.4, "bandpass", 0.6);
+    }
+  } else if (weapon === 5) { // knife: a swish through the air
+    burst(0.3 * volume, 1800, 0.16, 1.2, "bandpass");
+    burst(0.18 * volume, 3600, 0.1, 1.5, "bandpass", 0.04);
   } else {
     burst(0.5 * volume, 2600, 0.16, 0.8);
     tone(0.5 * volume, 140, 40, 0.12);

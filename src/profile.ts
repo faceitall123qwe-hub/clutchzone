@@ -21,6 +21,9 @@ const CHALLENGES: Challenge[] = [
   { id: "heads", text: "Get 3 headshot kills", goal: 3, reward: 150 },
   { id: "sniper", text: "Get 2 kills with the Longbow", goal: 2, reward: 150 },
   { id: "pistol", text: "Get 3 kills with the P-9", goal: 3, reward: 150 },
+  { id: "smg", text: "Get 3 kills with the Wasp", goal: 3, reward: 150 },
+  { id: "shotgun", text: "Get 3 kills with the Breacher", goal: 3, reward: 150 },
+  { id: "knife", text: "Get a kill with the Blade", goal: 1, reward: 200 },
   { id: "rounds", text: "Win 3 rounds", goal: 3, reward: 120 },
   { id: "plant", text: "Plant the bomb", goal: 1, reward: 120 },
   { id: "defuse", text: "Defuse the bomb", goal: 1, reward: 150 },
@@ -152,8 +155,8 @@ export class Progress {
     this.gain(head ? 15 : 10, head ? "Headshot" : "Kill");
     this.count("kills");
     if (head) this.count("heads");
-    if (weapon === 2) this.count("sniper");
-    if (weapon === 1) this.count("pistol");
+    const id = ["", "pistol", "sniper", "smg", "shotgun", "knife"][weapon];
+    if (id) this.count(id);
     if (this.lifeKills === 3) this.count("life3");
   }
 

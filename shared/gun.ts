@@ -15,13 +15,19 @@ export const newGun = (w: WeaponStats): GunState => ({
   ammo: w.magazine, reserve: w.reserve, shot: 0, cooldown: 0, sinceShot: 99, reloading: 0, held: false,
 });
 
-/** Advances one tick; returns how many bullets leave the barrel (0 or 1 at these fire rates). */
+/** Advances one tick; returns how many shots are fired (0 or 1 at these fire rates). */
 export function updateGun(g: GunState, w: WeaponStats, dt: number, trigger: boolean, reloadKey: boolean): number {
   const pressed = trigger && !g.held;
   g.held = trigger;
   g.cooldown = Math.max(0, g.cooldown - dt);
   g.sinceShot += dt;
   if (g.sinceShot > w.recoilRecovery) g.shot = 0;
+  if (w.melee) {
+    if (!trigger || g.cooldown > 1e-9) return 0;
+    g.cooldown += w.interval;
+    g.sinceShot = 0;
+    return 1;
+  }
 
   if (g.reloading > 0) {
     g.reloading -= dt;

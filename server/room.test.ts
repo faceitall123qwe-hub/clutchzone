@@ -5,7 +5,7 @@ import { OUTPOST } from "../shared/maps/outpost.ts";
 import * as P from "../shared/protocol.ts";
 import { ATK, DEF, decodePlayers, type RosterEntry, type ServerMsg } from "../shared/protocol.ts";
 import { cloneSim, gunOf, shotSeed, simulate, type Cmd } from "../shared/sim.ts";
-import { PISTOL, SNIPER, spread } from "../shared/weapons.ts";
+import { KNIFE, PISTOL, SHOTGUN, SNIPER, spread } from "../shared/weapons.ts";
 import { Room, sanitize, type Player } from "./room.ts";
 
 const base: Omit<Cmd, "seq"> = { forward: 0, right: 0, yaw: 0, pitch: 0, jump: false, crouch: false, walk: false,
@@ -270,6 +270,44 @@ test("kill events name the weapon", () => {
   room.step(); room.step();
   const kills = inbox.get(b.id)!.flatMap((m) => m.type === "snap" ? m.events : []).filter((e) => e.type === "kill");
   assert.deepEqual(kills.map((k) => k.type === "kill" && [k.w, k.head]), [[1, true]]);
+});
+
+test("the shotgun fires eight pellets that kill up close and don't reach far", () => {
+  const { room, inbox, join } = setup();
+  const a = join("a"), b = join("b"), c = join("c");
+  live(room);
+  place(a, 0, 10);
+  place(b, 0, 6);
+  place(c, 10, 0);
+  wait(room, a, 60, { slot: 4 });
+  input(room, a, { slot: 4, fire: true, pitch: Math.atan2(1.1 - 1.62, 4) });
+  room.step(); room.step();
+  const shots = inbox.get(b.id)!.flatMap((m) => m.type === "snap" ? m.events : []).filter((e) => e.type === "shot");
+  assert.equal(shots.length, SHOTGUN.pellets);
+  assert.equal(b.alive, false, "eight pellets at 4 m");
+  assert.equal(gunOf(a.sim).ammo, SHOTGUN.magazine - 1, "one shell for all of them");
+  wait(room, c, 60, { slot: 4 });
+  input(room, c, { slot: 4, fire: true, pitch: 0.6 }); // into the sky
+  room.step(); room.step();
+  const far = inbox.get(b.id)!.flatMap((m) => m.type === "snap" ? m.events : [])
+    .flatMap((e) => e.type === "shot" && e.id === c.id ? [Math.hypot(e.end.x - e.o.x, e.end.y - e.o.y, e.end.z - e.o.z)] : []);
+  assert.equal(far.length, SHOTGUN.pellets);
+  for (const d of far) assert.ok(Math.abs(d - SHOTGUN.range!) < 0.01, `pellets stop at ${SHOTGUN.range} m, not ${d}`);
+});
+
+test("the knife reaches 2.2 m, kills with two slashes and never runs out", () => {
+  const { room, join } = setup();
+  const a = join("a"), b = join("b");
+  live(room);
+  place(a, 0, 9);
+  place(b, 0, 6);
+  wait(room, a, 30, { slot: 5 });
+  wait(room, a, 30, { slot: 5, fire: true, pitch: Math.atan2(1.1 - 1.62, 3) });
+  assert.equal(b.hp, 100, "out of reach at 3 m");
+  place(a, 0, 7.6);
+  wait(room, a, Math.ceil(KNIFE.interval * 60) * 2, { slot: 5, fire: true, pitch: Math.atan2(1.1 - 1.62, 1.6) });
+  assert.equal(b.alive, false);
+  assert.equal(gunOf(a.sim).reloading, 0);
 });
 
 const secs = (room: Room, s: number, each?: () => void) => {

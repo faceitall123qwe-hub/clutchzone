@@ -86,10 +86,8 @@ export class Kit {
     return group;
   }
 
-  /** Everything in one mesh with one material (third-person models); "glass" parts get glow 1 for glowMaterial. */
+  /** Everything in one mesh with one material (third-person models). */
   buildSingle(material: THREE.Material): THREE.Mesh {
-    for (const p of this.parts)
-      p.geo.setAttribute("glow", new THREE.BufferAttribute(new Float32Array(p.geo.getAttribute("position").count).fill(p.surface === "glass" ? 1 : 0), 1));
     const mesh = new THREE.Mesh(mergeGeometries(this.parts.map((p) => p.geo)), material);
     for (const p of this.parts) p.geo.dispose();
     mesh.castShadow = true;
@@ -103,8 +101,8 @@ export const viewMaterials = (): Record<Surface, THREE.Material> => ({
   glass: toon({ vertexColors: true, emissive: 0x3a88c8 }),
 });
 
-/** Where the hands hold a gun, relative to its origin (the middle of the receiver). */
-export type GunSpec = { muzzle: THREE.Vector3; rightHand: V3; leftHand: V3 };
+/** Where the hands hold a gun, relative to its origin (the middle of the receiver); no left hand on a knife. */
+export type GunSpec = { muzzle: THREE.Vector3; rightHand: V3; leftHand: V3 | null };
 
 /** paint: the colours of the metal, the dark parts, the wood and the sniper's body. */
 export function gunKit(id: number, k = new Kit(), c: Paint = PAINTS[0]): GunSpec {
@@ -146,6 +144,42 @@ export function gunKit(id: number, k = new Kit(), c: Paint = PAINTS[0]): GunSpec
     k.cyl(0x3a6a8a, 0.024, 0.003, [0, 0.075, -0.206], undefined, "glass", 12);
     return { muzzle: new THREE.Vector3(0, 0, -0.81), rightHand: [0, -0.11, 0.13], leftHand: [0, -0.07, -0.3] };
   }
+  if (id === 3) {
+    // Wasp SMG: short, a long straight magazine, the stock folded
+    k.box(c.metal, [0.055, 0.075, 0.3], [0, 0, 0], undefined, "metal"); // receiver
+    k.box(c.accent, [0.057, 0.015, 0.12], [0, 0.02, 0.05]);
+    k.box(c.dark, [0.03, 0.02, 0.22], [0, 0.048, -0.01], undefined, "metal");
+    k.cyl(c.metal, 0.012, 0.12, [0, 0.01, -0.21], undefined, "metal", 8); // barrel
+    k.cyl(c.dark, 0.016, 0.04, [0, 0.01, -0.28]);
+    k.box(c.dark, [0.035, 0.16, 0.045], [0, -0.11, -0.06], undefined, "metal"); // magazine
+    k.box(c.wood, [0.04, 0.1, 0.045], [0, -0.085, 0.08], [-0.25, 0, 0]); // grip
+    k.box(c.wood, [0.04, 0.07, 0.04], [0, -0.07, -0.16]); // foregrip
+    for (const x of [0.022, -0.022]) k.box(c.dark, [0.012, 0.012, 0.17], [x, -0.01, 0.22], undefined, "metal");
+    k.box(c.dark, [0.05, 0.06, 0.014], [0, -0.02, 0.31], undefined, "metal");
+    return { muzzle: new THREE.Vector3(0, 0.01, -0.3), rightHand: [0, -0.09, 0.08], leftHand: [0, -0.09, -0.16] };
+  }
+  if (id === 4) {
+    // Breacher pump shotgun
+    k.box(c.metal, [0.065, 0.085, 0.26], [0, 0, 0], undefined, "metal"); // receiver
+    k.cyl(c.metal, 0.02, 0.55, [0, 0.02, -0.4], undefined, "metal", 10); // barrel
+    k.cyl(c.dark, 0.016, 0.45, [0, -0.025, -0.36], undefined, "metal", 8); // magazine tube
+    k.box(c.wood, [0.07, 0.06, 0.15], [0, -0.03, -0.32]); // pump
+    k.box(c.wood, [0.045, 0.11, 0.05], [0, -0.09, 0.09], [-0.3, 0, 0]); // grip
+    k.box(c.wood, [0.05, 0.085, 0.24], [0, -0.03, 0.25], [0.06, 0, 0]); // stock
+    k.box(c.dark, [0.054, 0.12, 0.025], [0, -0.045, 0.38], undefined, "metal");
+    k.sphere(c.accent, 0.008, [0, 0.045, -0.66]); // front bead
+    return { muzzle: new THREE.Vector3(0, 0.02, -0.68), rightHand: [0, -0.1, 0.09], leftHand: [0, -0.06, -0.32] };
+  }
+  if (id === 5) {
+    // Blade: a combat knife, held in the right hand
+    k.box(c.wood, [0.03, 0.036, 0.11], [0, 0, 0.02]); // handle
+    k.box(c.dark, [0.034, 0.04, 0.02], [0, 0, 0.08], undefined, "metal");
+    k.box(c.dark, [0.05, 0.05, 0.016], [0, 0.002, -0.042], undefined, "metal"); // guard
+    k.box(c.metal, [0.008, 0.046, 0.2], [0, 0.006, -0.15], undefined, "metal"); // blade
+    k.box(c.metal, [0.008, 0.034, 0.06], [0, 0.016, -0.262], [0.55, 0, 0], "metal");
+    k.box(0xe8eef5, [0.009, 0.01, 0.2], [0, -0.014, -0.15], undefined, "metal"); // edge
+    return { muzzle: new THREE.Vector3(0, 0, -0.29), rightHand: [0, 0, 0.02], leftHand: null };
+  }
   // AR-7 assault rifle
   k.box(c.metal, [0.06, 0.08, 0.4], [0, 0, 0], undefined, "metal"); // receiver
   k.cyl(c.metal, 0.03, 0.36, [0, 0.035, 0.01], undefined, "metal", 12); // dust cover
@@ -170,10 +204,12 @@ const GLOVE = 0x2b2d36, SLEEVE = 0xd9a95c;
 
 /** First-person hands and forearms reaching the gun from outside the screen. */
 export function handsKit(spec: GunSpec, k: Kit): void {
-  const [rx, ry, rz] = spec.rightHand, [lx, ly, lz] = spec.leftHand;
+  const [rx, ry, rz] = spec.rightHand;
   k.box(GLOVE, [0.07, 0.085, 0.09], [rx + 0.02, ry - 0.01, rz + 0.005]);
   k.limb(GLOVE, 0.036, [rx + 0.03, ry - 0.03, rz + 0.04], [rx + 0.06, ry - 0.07, rz + 0.1]);
   k.limb(SLEEVE, 0.045, [rx + 0.06, ry - 0.07, rz + 0.1], [rx + 0.17, ry - 0.24, rz + 0.42]);
+  if (!spec.leftHand) return;
+  const [lx, ly, lz] = spec.leftHand;
   k.box(GLOVE, [0.075, 0.06, 0.1], [lx - 0.015, ly - 0.035, lz]);
   k.limb(GLOVE, 0.036, [lx - 0.03, ly - 0.06, lz + 0.03], [lx - 0.06, ly - 0.1, lz + 0.08]);
   k.limb(SLEEVE, 0.045, [lx - 0.06, ly - 0.1, lz + 0.08], [lx - 0.2, ly - 0.32, lz + 0.35]);
@@ -185,8 +221,28 @@ export const OUTFITS: Outfit[] = [
   { uniform: 0x4d9cf0, vest: 0x1f4f9a, pants: 0x283a5c, helmet: 0x2f7fe0, skin: 0xe8b088 },
 ];
 
+/** Shooting-range targets: hard to miss. */
+export const TARGET_OUTFIT: Outfit = { uniform: 0xf0483c, vest: 0x9c1f1a, pants: 0x3a4152, helmet: 0xc8241c, skin: 0xffc79a };
+
+/** Soldier without legs, fitted to the hitboxes (feet at 0, facing -Z). h: standing or crouched height.
+ * Returns the shoulder height, where the arms and gun pivot with the view pitch. */
+export function torsoKit(o: Outfit, h: number, k: Kit, hat = "helmet"): number {
+  const legsTop = h * 0.45, headBottom = h - 0.28;
+  k.box(o.pants, [0.42, 0.16, 0.24], [0, legsTop + 0.06, 0]);
+  const chest = headBottom - legsTop - 0.12;
+  k.box(o.uniform, [0.46, chest, 0.26], [0, legsTop + 0.12 + chest / 2, 0]);
+  k.box(o.vest, [0.5, chest * 0.7, 0.3], [0, legsTop + 0.14 + chest * 0.4, 0]);
+  k.box(o.vest, [0.12, 0.08, 0.04], [-0.12, legsTop + 0.12 + chest * 0.3, -0.16]); // pouches
+  k.box(o.vest, [0.12, 0.08, 0.04], [0.12, legsTop + 0.12 + chest * 0.3, -0.16]);
+  k.box(o.skin, [0.1, 0.06, 0.1], [0, headBottom + 0.01, 0]); // neck
+  k.box(o.skin, [0.21, 0.22, 0.22], [0, headBottom + 0.13, 0]); // head
+  k.box(0x1d1d1d, [0.17, 0.04, 0.02], [0, headBottom + 0.16, -0.112]); // goggles band
+  hatKit(hat, o, headBottom + 0.24, k);
+  return headBottom - 0.06;
+}
+
 /** What's on the head; y: the top of the head. Purely cosmetic: the head hitbox doesn't change. */
-export function hatKit(hat: string, o: Outfit, y: number, k: Kit): void {
+function hatKit(hat: string, o: Outfit, y: number, k: Kit): void {
   if (hat === "beanie") {
     k.box(0xe2433a, [0.24, 0.1, 0.25], [0, y + 0.03, 0.005]);
     k.box(0xf4f4f4, [0.25, 0.04, 0.26], [0, y - 0.03, 0.005]);
@@ -224,12 +280,27 @@ export function armsKit(o: Outfit, gun: number, k: Kit, paint: Paint = PAINTS[0]
   const spec = gunKit(gun, k, paint);
   const g = new THREE.Vector3(0.12, -0.08, -0.32); // gun origin relative to the shoulders
   for (const p of k.parts.slice(before)) p.geo.translate(g.x, g.y, g.z);
-  const [rx, ry, rz] = spec.rightHand, [lx, ly, lz] = spec.leftHand;
+  const [rx, ry, rz] = spec.rightHand;
   k.beam(o.uniform, 0.1, 0.1, [0.24, 0, 0.02], [g.x + rx + 0.06, g.y + ry - 0.02, g.z + rz + 0.08]);
   k.box(GLOVE, [0.07, 0.09, 0.09], [g.x + rx + 0.02, g.y + ry, g.z + rz]);
+  // the left hand on the gun, or (a knife) hanging by the side
+  const [lx, ly, lz] = spec.leftHand ?? [-0.42, -0.24, 0.32];
   k.beam(o.uniform, 0.1, 0.1, [-0.24, 0, 0.02], [g.x + lx - 0.04, g.y + ly - 0.05, g.z + lz + 0.05]);
   k.box(GLOVE, [0.07, 0.07, 0.1], [g.x + lx - 0.01, g.y + ly - 0.03, g.z + lz]);
   return { ...spec, muzzle: spec.muzzle.clone().add(g) };
+}
+
+/** One leg hanging from the hip at the origin. Crouched legs kneel: thigh forward, shin down. */
+export function legKit(o: Outfit, h: number, crouched: boolean, k: Kit): void {
+  const legsTop = h * 0.45;
+  if (crouched) {
+    k.box(o.pants, [0.17, 0.17, 0.4], [0, 0, -0.14]);
+    k.box(o.pants, [0.16, legsTop - 0.08, 0.17], [0, -(legsTop - 0.08) / 2, -0.3]);
+    k.box(0x2b2722, [0.17, 0.1, 0.26], [0, -legsTop + 0.05, -0.33]);
+    return;
+  }
+  k.box(o.pants, [0.17, legsTop - 0.1, 0.19], [0, -(legsTop - 0.1) / 2, 0]);
+  k.box(0x2b2722, [0.18, 0.12, 0.27], [0, -legsTop + 0.06, -0.03]);
 }
 
 /** The bomb: a charge with a keypad and a light, about the size of a shoebox. Origin at its bottom centre. */

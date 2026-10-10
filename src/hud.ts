@@ -8,6 +8,9 @@ const ICONS = [
   `<svg viewBox="0 0 64 20"><path d="M2 7 14 6 16 8V12L4 14 2 13ZM16 5H36V11H16ZM20 11H24L22 17H18ZM28 11H33L35 18 31 19ZM36 6H48V10H36ZM48 7H61V8.6H48ZM56 4.5H57.4V7.5H56ZM34 3.6H36V5.2H34Z"/></svg>`,
   `<svg viewBox="0 0 32 20"><path d="M6 4H28V9H6ZM28 5.2H30V7.8H28ZM8 9H15L13 18H6ZM15 9H19V10.5L16 12.5H15Z"/></svg>`,
   `<svg viewBox="0 0 72 20"><path d="M1 8 18 7 20 9V12L6 15 1 14ZM20 7H42V12H20ZM42 8H68V9.6H42ZM68 7.2H71V10.4H68ZM23 2.4H41V5H23ZM21 1.6H25V5.8H21ZM39 1.8H43V5.6H39ZM29 5H31V7H29ZM34 5H36V7H34ZM23 12H27L25 18H21ZM32 12H37V16H32Z"/></svg>`,
+  `<svg viewBox="0 0 48 20"><path d="M2 6H8V8.5H4.5V12H2ZM8 5H32V11H8ZM32 6.6H42V9.4H32ZM42 6H45V10H42ZM14 3H22V5H14ZM12 11H17L15 18H11ZM22 11H26.5V19H22Z"/></svg>`,
+  `<svg viewBox="0 0 68 20"><path d="M1 8 16 7 18 9V12L5 15 1 14ZM18 6H32V12H18ZM32 6.5H64V9H32ZM64 6H66.5V9.5H64ZM32 9.6H58V11.4H32ZM37 9H51V13.5H37ZM21 12H25L23 18H19Z"/></svg>`,
+  `<svg viewBox="0 0 40 20"><path d="M2 8.5H14V12.5H2ZM14 6H16.5V15H14ZM16.5 8H33L38.5 10.2 33 12.5H16.5Z"/></svg>`,
 ];
 const BOMB_ICON = `<svg viewBox="0 0 24 20"><path d="M2 6H22V18H2ZM5 3H8V6H5ZM16 3H19V6H16Z"/><path d="M5 9H12V12H5Z" fill="#7cff8a"/></svg>`;
 const HEADSHOT = `<svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="5.2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M10 0V6M10 14V20M0 10H6M14 10H20" stroke="currentColor" stroke-width="1.8"/></svg>`;
@@ -180,12 +183,13 @@ export class Hud {
       this.el("wname").textContent = WEAPONS[slot].name;
       for (const d of this.el("slots").children) d.classList.toggle("on", (d as HTMLElement).dataset.slot === String(slot));
     }
-    this.el("mag").textContent = String(mag);
-    this.el("res").textContent = `/ ${reserve}`;
+    const melee = !!WEAPONS[slot].melee;
+    this.el("mag").textContent = melee ? "—" : String(mag);
+    this.el("res").textContent = melee ? "" : `/ ${reserve}`;
     const bar = this.el("reload");
     bar.style.display = reloadProgress > 0 ? "block" : "none";
     (bar.firstElementChild as HTMLElement).style.width = `${reloadProgress * 100}%`;
-    this.el("mag").classList.toggle("low", mag <= Math.ceil(WEAPONS[slot].magazine / 6));
+    this.el("mag").classList.toggle("low", !melee && mag <= Math.ceil(WEAPONS[slot].magazine / 6));
   }
 
   health(hp: number): void {

@@ -14,14 +14,10 @@ export const toon = (params: THREE.MeshToonMaterialParameters = {}) =>
 
 export const INK = new THREE.Color(0x14161c);
 
-/** Alpha a soldier of each team leaves in the outline target; the world writes 1. */
-export const TEAM_MARK = [0.25, 0.5];
-
 /**
- * Neon outlines for the whole world in one full-screen pass: the scene is rendered into a target with
- * a depth texture, and a glowing line is drawn where depth jumps (silhouettes) or bends (box edges,
- * creases), with a soft halo from a second, wider look. No extra draw calls per object. Soldiers write
- * their team into the alpha channel (TEAM_MARK), and their lines take the team's colour instead.
+ * Black outlines for the whole world in one full-screen pass: the scene is rendered into a target with
+ * a depth texture, and a line is drawn where depth jumps (silhouettes) or bends (box edges, creases).
+ * No extra draw calls per object, whatever is on screen.
  */
 export class Outline {
   readonly target: THREE.WebGLRenderTarget;
@@ -29,7 +25,7 @@ export class Outline {
   private readonly cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   private readonly size = new THREE.Vector2();
 
-  constructor(teams: number[]) {
+  constructor() {
     // no MSAA and 8-bit sRGB colour: integrated graphics can't afford more, and the outlines hide the jaggies
     this.target = new THREE.WebGLRenderTarget(1, 1, {
       colorSpace: THREE.SRGBColorSpace, depthTexture: new THREE.DepthTexture(1, 1, THREE.FloatType),
@@ -39,43 +35,30 @@ export class Outline {
       depthWrite: false,
       uniforms: {
         tColor: { value: this.target.texture }, tDepth: { value: this.target.depthTexture },
-        texel: { value: new THREE.Vector2() }, invNear: { value: 1 }, invRange: { value: 1 }, ink: { value: new THREE.Color(0x3ff0ff) },
-        team0: { value: new THREE.Color(teams[0]) }, team1: { value: new THREE.Color(teams[1]) },
+        texel: { value: new THREE.Vector2() }, invNear: { value: 1 }, invRange: { value: 1 }, ink: { value: INK },
       },
       vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
       fragmentShader: `
-        uniform sampler2D tColor, tDepth; uniform vec2 texel; uniform float invNear, invRange; uniform vec3 ink, team0, team1;
+        uniform sampler2D tColor, tDepth; uniform vec2 texel; uniform float invNear, invRange; uniform vec3 ink;
         varying vec2 vUv;
         float depth(vec2 uv) { return texture2D(tDepth, uv).x; }
-        float mark(vec2 uv) { return texture2D(tColor, uv).a; }
         void main() {
           // 1 / view distance = 1/near - depth * (1/near - 1/far): on any flat surface it changes linearly
           // across the screen, so its second difference is zero there and large at silhouettes and at the
           // edges between faces. Offsets are whole pixels: depth is sampled without filtering.
+          vec2 o = texel * 2.0;
           float c = depth(vUv);
-          float scale = invRange / max(invNear - min(c, 0.999999) * invRange, 1e-6);
-          vec2 o = texel * 2.0, w = texel * 5.0;
           float h = abs(depth(vUv - vec2(o.x, 0.0)) + depth(vUv + vec2(o.x, 0.0)) - 2.0 * c);
           float v = abs(depth(vUv - vec2(0.0, o.y)) + depth(vUv + vec2(0.0, o.y)) - 2.0 * c);
-          float edge = smoothstep(0.004, 0.012, (h + v) * scale);
-          float hw = abs(depth(vUv - vec2(w.x, 0.0)) + depth(vUv + vec2(w.x, 0.0)) - 2.0 * c);
-          float vw = abs(depth(vUv - vec2(0.0, w.y)) + depth(vUv + vec2(0.0, w.y)) - 2.0 * c);
-          float halo = smoothstep(0.006, 0.03, (hw + vw) * scale);
+          float bend = (h + v) * invRange / max(invNear - min(c, 0.999999) * invRange, 1e-6);
+          float edge = smoothstep(0.004, 0.012, bend);
           vec4 col = texture2D(tColor, vUv);
-          float m = min(min(min(col.a, mark(vUv - vec2(w.x, 0.0))), min(mark(vUv + vec2(w.x, 0.0)), mark(vUv - vec2(0.0, w.y)))),
-            min(min(mark(vUv + vec2(0.0, w.y)), mark(vUv - vec2(o.x, 0.0))), min(mark(vUv + vec2(o.x, 0.0)), mark(vUv + vec2(0.0, o.y)))));
-          vec3 line = m > 0.75 ? ink : m > 0.375 ? team1 : team0;
-          gl_FragColor = vec4(mix(col.rgb, line, edge * 0.85) + line * halo * 0.22, 1.0);
+          gl_FragColor = vec4(mix(col.rgb, ink, edge * 0.92), 1.0);
           #include <colorspace_fragment>
         }`,
     });
     this.quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
     this.quad.frustumCulled = false;
-  }
-
-  /** The colour of the lines: each map has its own neon. */
-  setInk(color: THREE.Color): void {
-    (this.quad.material as THREE.ShaderMaterial).uniforms.ink.value.copy(color);
   }
 
   setSize(renderer: THREE.WebGLRenderer): void {

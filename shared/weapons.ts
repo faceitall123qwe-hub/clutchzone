@@ -19,6 +19,9 @@ export type WeaponStats = {
   recoil: number; // scale of the spray pattern
   recoilRecovery: number; // seconds of not shooting before the spray resets
   scope?: { fov: number; spread: number; speed: number }; // fov in degrees; spread replaces baseSpread
+  pellets?: number; // bullets per shot (a shotgun), each with its own spread
+  range?: number; // metres a bullet reaches, if less than RANGE
+  melee?: boolean; // a blade: no ammo, no reload, no tracer
 };
 
 export const RIFLE: WeaponStats = {
@@ -82,8 +85,72 @@ export const SNIPER: WeaponStats = {
   scope: { fov: 22, spread: 0.0006, speed: 0.42 },
 };
 
-/** Index = weapon id = slot (key 1, 2, 3). */
-export const WEAPONS: readonly WeaponStats[] = [RIFLE, PISTOL, SNIPER];
+export const SMG: WeaponStats = {
+  name: "Wasp",
+  damage: 24, // a headshot doesn't quite kill
+  interval: 0.075,
+  magazine: 30,
+  reserve: 120,
+  reloadTime: 2.2,
+  drawTime: 0.45,
+  auto: true,
+  speed: 1.05,
+  baseSpread: 0.007,
+  moveSpread: 0.035, // forgiving on the run, unlike the rifle
+  airSpread: 0.12,
+  crouchFactor: 0.8,
+  shotSpread: 0.0016,
+  maxShotSpread: 0.024,
+  recoil: 0.65,
+  recoilRecovery: 0.3,
+};
+
+export const SHOTGUN: WeaponStats = {
+  name: "Breacher",
+  damage: 15, // per pellet: all eight up close kill, a few at ten metres don't
+  interval: 0.9, // pump action
+  magazine: 6,
+  reserve: 24,
+  reloadTime: 2.8,
+  drawTime: 0.6,
+  auto: false,
+  speed: 0.95,
+  baseSpread: 0.055, // the cone the pellets spread in
+  moveSpread: 0.02,
+  airSpread: 0.05,
+  crouchFactor: 0.9,
+  shotSpread: 0,
+  maxShotSpread: 0,
+  recoil: 0,
+  recoilRecovery: 0.35,
+  pellets: 8,
+  range: 28,
+};
+
+export const KNIFE: WeaponStats = {
+  name: "Blade",
+  damage: 55, // two slashes to the body, one to the head
+  interval: 0.5,
+  magazine: 0,
+  reserve: 0,
+  reloadTime: 0,
+  drawTime: 0.3,
+  auto: true,
+  speed: 1.12, // run with the knife out
+  baseSpread: 0,
+  moveSpread: 0,
+  airSpread: 0,
+  crouchFactor: 1,
+  shotSpread: 0,
+  maxShotSpread: 0,
+  recoil: 0,
+  recoilRecovery: 0.3,
+  range: 2.2,
+  melee: true,
+};
+
+/** Index = weapon id = slot (keys 1-6). */
+export const WEAPONS: readonly WeaponStats[] = [RIFLE, PISTOL, SNIPER, SMG, SHOTGUN, KNIFE];
 
 const deg = Math.PI / 180;
 

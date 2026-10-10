@@ -60,10 +60,11 @@ const P = plan(PLAN, {
 export const REACTOR: MapDef = {
   id: "reactor",
   name: "Reactor",
-  theme: "toxic",
+  theme: "harbor",
   half: P.half,
   maxFloor: 1.2,
   boxes: [...arena(P.half), ...P.boxes],
   spawns: { attackers: P.attackers, defenders: P.defenders },
   sites: P.sites,
+  decor: { windows: [], signs: { A: [-8, 2.5, -33, 0], B: [-34, 2.5, -2, 0] } },
 };

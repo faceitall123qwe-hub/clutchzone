@@ -7,8 +7,9 @@ export type MapBox = Box & { kind: Kind; tint?: number };
 export type Spawn = { x: number; z: number; yaw: number };
 export type Rect = { min: readonly [number, number]; max: readonly [number, number] }; // ground plan x, z
 export type Site = "A" | "B";
-/** The neon colour of the edges and strips, the second colour of the site markers, the sky. */
-export type Theme = "synth" | "toxic" | "ice";
+/** Sets the textures of floor, walls and buildings, the sky and the light. */
+export type Theme = "desert" | "harbor" | "snow";
+type Placed = readonly [x: number, y: number, z: number, rotY: number];
 
 /**
  * A map is plain data: the server collides and shoots against `boxes`, the client draws them.
@@ -23,6 +24,11 @@ export type MapDef = {
   boxes: MapBox[];
   spawns: { attackers: Spawn[]; defenders: Spawn[] };
   sites: Record<Site, Rect>;
+  decor: {
+    windows: Placed[]; // visual only, on building walls
+    signs: Record<Site, Placed>; // the painted site letters
+    trees?: (readonly [x: number, z: number])[]; // foliage only: give each trunk a box of its own
+  };
 };
 
 export const box = (kind: Kind, x1: number, y1: number, z1: number, x2: number, y2: number, z2: number,

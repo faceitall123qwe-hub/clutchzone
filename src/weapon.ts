@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { WEAPONS } from "../shared/weapons.ts";
 import { starTexture } from "./effects";
 import { PAINTS, type Paint } from "./cosmetics";
 import { gunKit, handsKit, Kit, viewMaterials, type GunSpec } from "./models";
@@ -6,9 +7,16 @@ import { addHull } from "./toon";
 
 type ViewGun = { group: THREE.Group; spec: GunSpec; rest: THREE.Vector3; kick: { up: number; back: number }; inward: number };
 
-const REST = [new THREE.Vector3(0.2, -0.23, -0.62), new THREE.Vector3(0.12, -0.115, -0.4), new THREE.Vector3(0.2, -0.215, -0.6)];
-const KICK = [{ up: 0.06, back: 0.05 }, { up: 0.3, back: 0.04 }, { up: 0.22, back: 0.12 }];
-const INWARD = [0.06, 0.12, 0.06]; // yaw towards the crosshair
+const REST = [
+  new THREE.Vector3(0.2, -0.23, -0.62), new THREE.Vector3(0.12, -0.115, -0.4), new THREE.Vector3(0.2, -0.215, -0.6),
+  new THREE.Vector3(0.16, -0.17, -0.5), new THREE.Vector3(0.2, -0.22, -0.6), new THREE.Vector3(0.2, -0.19, -0.48),
+];
+const KICK = [
+  { up: 0.06, back: 0.05 }, { up: 0.3, back: 0.04 }, { up: 0.22, back: 0.12 },
+  { up: 0.05, back: 0.035 }, { up: 0.35, back: 0.1 }, { up: 0, back: 0 },
+];
+const INWARD = [0.06, 0.12, 0.06, 0.08, 0.06, 0.2]; // yaw towards the crosshair
+const RECOVER = [12, 12, 4, 12, 5, 3.5]; // how fast the kick (or the knife's swing) settles
 
 /** First-person gun and hands, drawn in their own pass so they never clip into walls. */
 export class ViewModel {
@@ -64,6 +72,7 @@ export class ViewModel {
 
   fired(): void {
     this.kick = 1;
+    if (WEAPONS[this.slot].melee) return;
     this.flashTime = 0.06;
     this.flash.rotation.z = Math.random() * Math.PI;
   }
@@ -83,9 +92,9 @@ export class ViewModel {
     gun.group.visible = !scoped;
     this.flash.position.copy(gun.spec.muzzle);
     this.flashLight.position.copy(gun.spec.muzzle);
-    this.flash.scale.setScalar(slot === 1 ? 0.6 : 1);
+    this.flash.scale.setScalar(slot === 1 ? 0.6 : slot === 3 ? 0.75 : slot === 4 ? 1.3 : 1);
 
-    this.kick = Math.max(0, this.kick - dt * (slot === 2 ? 4 : 12));
+    this.kick = Math.max(0, this.kick - dt * RECOVER[slot]);
     this.flashTime -= dt;
     this.flash.visible = this.flashTime > 0;
     this.flashLight.intensity = this.flashTime > 0 ? 4 : 0;
@@ -97,12 +106,15 @@ export class ViewModel {
     const r = reload > 0 ? Math.sin(Math.PI * reload) : 0; // dip and roll, then back
     const d = 1 - (1 - draw) ** 3; // bring it up from below
     const k = this.kick;
+    // the knife slashes across: out to the left and back, the blade turning with it
+    const slash = WEAPONS[slot].melee && k > 0 ? Math.sin(Math.PI * (1 - k)) : 0;
     gun.group.position.set(
-      gun.rest.x + Math.sin(this.bob) * 0.012 * move + this.sway.x * 0.012,
-      gun.rest.y + Math.abs(Math.cos(this.bob)) * 0.01 * move - r * 0.12 - (1 - d) * 0.3 + this.sway.y * 0.01,
-      gun.rest.z + k * gun.kick.back,
+      gun.rest.x + Math.sin(this.bob) * 0.012 * move + this.sway.x * 0.012 - slash * 0.1,
+      gun.rest.y + Math.abs(Math.cos(this.bob)) * 0.01 * move - r * 0.12 - (1 - d) * 0.3 + this.sway.y * 0.01 + slash * 0.03,
+      gun.rest.z + k * gun.kick.back - slash * 0.05,
     );
-    gun.group.rotation.set(k * gun.kick.up - r * 0.5 - (1 - d) * 1.1, gun.inward + this.sway.x * 0.03, r * 0.6);
+    gun.group.rotation.set(k * gun.kick.up - r * 0.5 - (1 - d) * 1.1 + slash * 0.12,
+      gun.inward + this.sway.x * 0.03 + slash * 0.75, r * 0.6 + slash * 0.25);
   }
 
   /** Where the muzzle is on screen, in normalised device coordinates. */

@@ -9,7 +9,7 @@ import { OUTPOST } from "../shared/maps/outpost.ts";
 import { eyeHeight } from "../shared/movement.ts";
 import { ATK, DEFUSE_RANGE, TEAM_NAMES, type GameEvent, type RemotePlayer, type RoundState, type Snapshot } from "../shared/protocol.ts";
 import {
-  cloneSim, gunOf, newSim, RANGE, shotSeed, simulate, traceMap, traceTargets, weaponOf, type Bullet, type Cmd,
+  cloneSim, gunOf, newSim, RANGE, rangeOf, shotSeed, simulate, traceMap, traceTargets, weaponOf, type Bullet, type Cmd,
 } from "../shared/sim.ts";
 import { spread, WEAPONS } from "../shared/weapons.ts";
 import { actClick, audioTrack, click, explosion, footstep, gunshot, hitSound, levelUpSound, roundEnd, setVolume, unlockAudio } from "./audio";
@@ -21,7 +21,6 @@ import { Meta } from "./locker";
 import { levelOf, Progress } from "./profile";
 import { drawCard } from "./share";
 import { spawnBots, type Bot } from "./bots";
-import { Soldier, TEAM_GLOW } from "./characters";
 import { Decals, Flashes, Particles, Tracers } from "./effects";
 import { Hud } from "./hud";
 import { axes, isDown, locked, takeMouse } from "./input";
@@ -51,8 +50,7 @@ let world: World = buildWorld(scene, currentMap);
 const camera = new THREE.PerspectiveCamera(80, innerWidth / innerHeight, 0.05, 250);
 camera.rotation.order = "YXZ";
 const view = new ViewModel();
-const outline = new Outline(TEAM_GLOW);
-outline.setInk(world.neon);
+const outline = new Outline();
 view.resize(innerWidth / innerHeight);
 const hud = new Hud();
 const decals = new Decals(scene);
@@ -78,18 +76,12 @@ function warmUp(): void {
   for (const o of hidden) o.visible = false;
 }
 
-// a hidden trooper stays in the scene so warmUp() compiles their shaders before anyone appears
-const warm = new Soldier(0);
-warm.root.visible = false;
-scene.add(warm.root);
-
 /** Rooms change maps between matches: rebuild what's drawn; the simulation reads currentMap.boxes. */
 function setMap(map: MapDef): void {
   if (map === currentMap) return;
   world.dispose();
   currentMap = map;
   world = buildWorld(scene, map);
-  outline.setInk(world.neon);
   radar.setMap(map);
   decals.clear();
   warmUp();
@@ -185,13 +177,13 @@ const vec = (v: { x: number; y: number; z: number }) => new THREE.Vector3(v.x, v
 const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 const ndc = new THREE.Vector2(), muzzle = new THREE.Vector3(), tmp = new THREE.Vector3();
 
-/** Dust and a bullet hole where a bullet hit the map; sparks off metal. */
-function wallImpact(o: THREE.Vector3, end: THREE.Vector3): void {
+/** Dust and a bullet hole (hole: not for a blade) where a bullet hit the map; sparks off metal. */
+function wallImpact(o: THREE.Vector3, end: THREE.Vector3, hole = true): void {
   const d = tmp.subVectors(end, o).normalize();
   const hit = traceMap({ o, d }, currentMap.boxes, o.distanceTo(end) + 0.05);
   if (!hit.hitWall) return;
   const n = new THREE.Vector3(...hit.normal);
-  decals.add(end, n);
+  if (hole) decals.add(end, n);
   const kind = currentMap.boxes[hit.index].kind;
   particles.impact(end, n, kind === "metal" || kind === "container");
 }
@@ -205,18 +197,30 @@ function ourMuzzle(): THREE.Vector3 {
   return muzzle.copy(camera.position).addScaledVector(tmp, 0.9);
 }
 
+let lastHitAt = 0;
+/** Hit marker and sound; a shotgun's pellets landing together count once. */
+function hitFeedback(head: boolean, kill: boolean): void {
+  const now = performance.now();
+  if (now - lastHitAt < 40 && !head && !kill) return;
+  lastHitAt = now;
+  hud.hit(head, kill);
+  hitSound(head);
+}
+
+const FLASH = [0.6, 0.35, 0.6, 0.45, 0.8, 0]; // muzzle flash size of each weapon, seen from outside
+
 /** Muzzle flash, tracer and impact for one of our bullets; in the range also the damage. */
 function ourShot(b: Bullet): void {
-  const wall = traceMap(b, currentMap.boxes);
+  const w = WEAPONS[b.w];
+  const wall = traceMap(b, currentMap.boxes, rangeOf(b.w));
   let t = wall.t, onPlayer = false;
   if (mode?.kind === "range") {
     const hit = traceTargets(b, mode.bots.filter((x) => x.alive).map((x) => ({ id: x, feet: x.feet, crouched: x.crouched })), wall.t);
     if (hit) {
       t = hit.t;
       onPlayer = true;
-      const kill = hit.id.hit(WEAPONS[b.w].damage * DAMAGE_SCALE[hit.part]);
-      hud.hit(hit.part === "head", kill);
-      hitSound(hit.part === "head");
+      const kill = hit.id.hit(w.damage * DAMAGE_SCALE[hit.part]);
+      hitFeedback(hit.part === "head", kill);
       particles.blood(vec(b.o).addScaledVector(vec(b.d), t), vec(b.d), hit.part === "head");
       if (kill) hud.feed("You", "Target", b.w, hit.part === "head", true);
     }
@@ -228,8 +232,9 @@ function ourShot(b: Bullet): void {
     if (hit) { t = hit.t; onPlayer = true; }
   }
   const end = vec(b.o).addScaledVector(vec(b.d), t);
-  if (!onPlayer && wall.hitWall) wallImpact(vec(b.o), end);
-  tracers.add(ourMuzzle(), end);
+  if (!onPlayer && wall.hitWall) wallImpact(vec(b.o), end, !w.melee);
+  if (!w.melee) tracers.add(ourMuzzle(), end);
+  if (b.p) return; // a shotgun's other pellets: one flash, one bang
   hud.shot();
   view.fired();
   gunshot(b.w);
@@ -244,16 +249,18 @@ function playFx(f: Fx): void {
   const e = f.shot;
   const start = new THREE.Vector3();
   if (!remotes.muzzle(e.id, start)) start.copy(vec(e.o));
-  const end = vec(e.end);
-  tracers.add(start, end);
-  flashes.add(start, e.w === 1 ? 0.35 : 0.6);
-  const d = Math.hypot(e.o.x - me.move.pos.x, e.o.z - me.move.pos.z);
-  gunshot(e.w, Math.min(0.8, 6 / (d + 6)));
+  const end = vec(e.end), melee = !!WEAPONS[e.w]?.melee;
+  if (!melee) tracers.add(start, end);
+  if (!e.p) {
+    if (FLASH[e.w]) flashes.add(start, FLASH[e.w]);
+    const d = Math.hypot(e.o.x - me.move.pos.x, e.o.z - me.move.pos.z);
+    gunshot(e.w, Math.min(0.8, 6 / (d + 6)));
+  }
   if (f.hit) {
     particles.blood(end, tmp.subVectors(end, vec(e.o)).normalize(), f.hit.part === "head");
     remotes.hurt(f.hit.target);
   } else {
-    wallImpact(vec(e.o), end);
+    wallImpact(vec(e.o), end, !melee);
   }
 }
 
@@ -294,8 +301,7 @@ function onSnap(s: Snapshot): void {
       const shot = lastShot.get(e.by);
       if (shot && "tick" in shot) shot.hit = { target: e.target, part: e.part };
       if (e.by === myId) {
-        hud.hit(e.part === "head", killed.has(e.target));
-        hitSound(e.part === "head");
+        hitFeedback(e.part === "head", killed.has(e.target));
         if (shot && !("tick" in shot)) {
           const end = vec(shot.end);
           particles.blood(end, tmp.subVectors(end, vec(shot.o)).normalize(), e.part === "head");
@@ -784,6 +790,7 @@ if (import.meta.env.DEV) {
       },
       look: (y: number, p: number) => { yaw = y; pitch = p; },
       fire: (ticks: number) => { devFire = ticks; },
+      paint: (id: string) => view.setPaint(paintOf(id)),
       weapon: (slot: number) => { wantSlot = slot; },
       scope: (on: boolean) => { scopeOn = on; },
       card: async () => (await drawCard({ map: "Dockyard", kills: 23, deaths: 7, heads: 9, won: true, score: [7, 4],

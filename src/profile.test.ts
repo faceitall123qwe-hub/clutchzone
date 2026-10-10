@@ -32,6 +32,7 @@ test("daily challenges: the same three for everyone on a day, done once, with th
   // drive it with the event it counts
   const drive: Record<string, () => void> = {
     kills: () => p.kill(false, 0), heads: () => p.kill(true, 0), sniper: () => p.kill(false, 2), pistol: () => p.kill(false, 1),
+    smg: () => p.kill(false, 3), shotgun: () => p.kill(false, 4), knife: () => p.kill(false, 5),
     rounds: () => p.roundWon(), plant: () => p.planted(), defuse: () => p.defused(), match: () => p.matchEnded(false),
     life3: () => p.kill(false, 0),
   };

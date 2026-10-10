@@ -1,10 +1,12 @@
 import { arena, box, stairs, type MapDef } from "../map.ts";
 
-/** The shooting range (and the tests' map), 48 × 48 m. Three lanes: B long (west), mid, A long (east); sites in the north corners. */
+const H = Math.PI / 2;
+
+/** Desert blockout, 48 × 48 m. Three lanes: B long (west), mid, A long (east); sites in the north corners. */
 export const OUTPOST: MapDef = {
   id: "outpost",
   name: "Outpost",
-  theme: "synth",
+  theme: "desert",
   half: 24,
   maxFloor: 2.6, // the crate on the A platform
   boxes: [
@@ -43,5 +45,12 @@ export const OUTPOST: MapDef = {
   sites: {
     A: { min: [14, -24], max: [24, -12] },
     B: { min: [-24, -24], max: [-14, -10] },
+  },
+  decor: {
+    windows: [
+      ...[-5, 0, 5].flatMap((z) => [[-14.01, 3.1, z, -H], [-4.99, 3.1, z, H], [4.99, 3.1, z, -H], [14.01, 3.1, z, H]] as const),
+      ...[-11.5, -7.5, 7.5, 11.5].flatMap((x) => [[x, 3.1, -8.01, Math.PI], [x, 3.1, 8.01, 0]] as const),
+    ],
+    signs: { A: [19.5, 3.6, -23.98, 0], B: [-18.5, 3, -23.98, 0] },
   },
 };

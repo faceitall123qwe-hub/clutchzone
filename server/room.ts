@@ -5,7 +5,7 @@ import { siteAt, type MapDef, type Site } from "../shared/map.ts";
 import { mapById, nextMap } from "../shared/maps.ts";
 import * as P from "../shared/protocol.ts";
 import { ATK, DEF } from "../shared/protocol.ts";
-import { gunOf, newSim, shotSeed, simulate, traceMap, traceTargets, type Cmd, type Sim } from "../shared/sim.ts";
+import { gunOf, newSim, rangeOf, shotSeed, simulate, traceMap, traceTargets, type Cmd, type Sim } from "../shared/sim.ts";
 import { WEAPONS } from "../shared/weapons.ts";
 import { BOT_NAMES, BotBrain, NO_OBJECTIVE, spotsIn, spotsNear, type Objective } from "./bot.ts";
 
@@ -392,11 +392,11 @@ export class Room {
     p.pitch = cmd.pitch;
     p.use = cmd.use;
     for (const b of simulate(p.sim, cmd, shotSeed(p.id, cmd.seq), this.map.boxes)) {
-      const wall = traceMap(b, this.map.boxes);
+      const wall = traceMap(b, this.map.boxes, rangeOf(b.w));
       const hit = traceTargets(b, this.posesAt(viewTick, p), wall.t);
       const t = hit?.t ?? wall.t;
       this.events.push({ type: "shot", id: p.id, w: b.w, o: b.o,
-        end: { x: b.o.x + b.d.x * t, y: b.o.y + b.d.y * t, z: b.o.z + b.d.z * t } });
+        end: { x: b.o.x + b.d.x * t, y: b.o.y + b.d.y * t, z: b.o.z + b.d.z * t }, ...(b.p ? { p: b.p } : {}) });
       if (hit) this.damage(p, this.players.get(hit.id)!, hit.part, b.w);
     }
   }
