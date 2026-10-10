@@ -60,11 +60,10 @@ const P = plan(PLAN, {
 export const SKYLINE: MapDef = {
   id: "skyline",
   name: "Skyline",
-  theme: "snow",
+  theme: "ice",
   half: P.half,
   maxFloor: 1.2,
   boxes: [...arena(P.half), ...P.boxes],
   spawns: { attackers: P.attackers, defenders: P.defenders },
   sites: P.sites,
-  decor: { windows: [], signs: { A: [0, 2.5, -9, 0], B: [26, 2.5, -33, 0] } },
 };

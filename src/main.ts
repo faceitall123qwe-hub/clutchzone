@@ -52,6 +52,7 @@ const camera = new THREE.PerspectiveCamera(80, innerWidth / innerHeight, 0.05, 2
 camera.rotation.order = "YXZ";
 const view = new ViewModel();
 const outline = new Outline();
+outline.setInk(world.neon);
 view.resize(innerWidth / innerHeight);
 const hud = new Hud();
 const decals = new Decals(scene);
@@ -92,6 +93,7 @@ function setMap(map: MapDef): void {
   world.dispose();
   currentMap = map;
   world = buildWorld(scene, map);
+  outline.setInk(world.neon);
   radar.setMap(map);
   decals.clear();
   warmUp();

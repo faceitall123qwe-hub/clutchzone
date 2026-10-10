@@ -58,11 +58,10 @@ const P = plan(PLAN, {
 export const PLAZA: MapDef = {
   id: "plaza",
   name: "Plaza",
-  theme: "desert",
+  theme: "synth",
   half: P.half,
   maxFloor: 1.2,
   boxes: [...arena(P.half), ...P.boxes],
   spawns: { attackers: P.attackers, defenders: P.defenders },
   sites: P.sites,
-  decor: { windows: [], signs: { A: [-36, 2.5, -31, 0], B: [24, 2.5, -14, 0] } },
 };

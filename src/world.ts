@@ -1,149 +1,116 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import type { Kind, MapDef, Theme } from "../shared/map.ts";
-import { gradient, toon } from "./toon";
+import type { Kind, MapDef, Rect, Theme } from "../shared/map.ts";
+
+/**
+ * Neon arena: dark surfaces, light only where it glows. Every surface has a dark colour texture and an
+ * emissive texture (grid lines, seams, lit windows) in the map's neon colour; strips of light run along
+ * the foot and the top of every wall; the outline pass draws the edges in the same colour.
+ */
+type Look = {
+  neon: number; // edges, strips, floor grid
+  second: number; // site letters and frames, crate frames
+  floor: string; panel: string; seam: string;
+  sky: [top: number, horizon: number];
+  fog: [color: number, near: number, far: number];
+};
+
+export const LOOKS: Record<Theme, Look> = {
+  synth: { neon: 0xff3df0, second: 0x3ff0ff, floor: "#100d22", panel: "#1b1734", seam: "#0b0918",
+    sky: [0x05030f, 0x4a1260], fog: [0x160a26, 45, 170] },
+  toxic: { neon: 0x7dff4a, second: 0xffd84a, floor: "#0b130f", panel: "#16221c", seam: "#070d0a",
+    sky: [0x020604, 0x123f20], fog: [0x0a1a10, 45, 170] },
+  ice: { neon: 0x36e6ff, second: 0xb98cff, floor: "#0a1220", panel: "#141f33", seam: "#070c16",
+    sky: [0x02050c, 0x103e5c], fog: [0x081626, 45, 170] },
+};
 
 type Paint = (g: CanvasRenderingContext2D, s: number, rnd: () => number) => void;
 
-/** Canvas texture; metres: how many metres one copy of it covers. Clean flat colour: the cartoon look
- * comes from the banded light and the outlines, not from texture detail. */
-function texture(paint: Paint, metres: number, size = 512): THREE.CanvasTexture {
+function canvas(paint: Paint, size = 512): HTMLCanvasElement {
   const c = document.createElement("canvas");
   c.width = c.height = size;
-  const g = c.getContext("2d")!;
   let seed = 7;
   const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-  paint(g, size, rnd);
-  const t = new THREE.CanvasTexture(c);
-  t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.anisotropy = 8;
-  t.repeat.set(1 / metres, 1 / metres);
-  return t;
+  paint(c.getContext("2d")!, size, rnd);
+  return c;
 }
 
-const vary = (hex: string, rnd: () => number, k = 0.06) => {
-  const c = new THREE.Color(hex);
-  const f = 1 + (rnd() - 0.5) * 2 * k;
-  return `#${c.setRGB(Math.min(1, c.r * f), Math.min(1, c.g * f), Math.min(1, c.b * f)).getHexString()}`;
-};
+/** A colour texture and its emissive twin, metres: how many metres one copy covers. */
+function surface(base: Paint, glow: Paint, metres: number): { map: THREE.Texture; emissiveMap: THREE.Texture } {
+  const make = (p: Paint, color: boolean) => {
+    const t = new THREE.CanvasTexture(canvas(p));
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    if (color) t.colorSpace = THREE.SRGBColorSpace;
+    t.anisotropy = 8;
+    t.repeat.set(1 / metres, 1 / metres);
+    return t;
+  };
+  return { map: make(base, true), emissiveMap: make(glow, false) };
+}
 
-/** Square tiles with a grout line, n per side. */
-const tiles = (base: string, grout: string, n: number, line = 6): Paint => (g, s, rnd) => {
-  g.fillStyle = grout;
+const fill = (color: string): Paint => (g, s) => { g.fillStyle = color; g.fillRect(0, 0, s, s); };
+const black = fill("#000");
+
+/** Panels n per side with dark seams between them, a little uneven. */
+const panels = (look: Look, n: number): Paint => (g, s, rnd) => {
+  g.fillStyle = look.seam;
   g.fillRect(0, 0, s, s);
-  const w = s / n;
+  const w = s / n, c = new THREE.Color();
   for (let i = 0; i < n; i++)
     for (let j = 0; j < n; j++) {
-      g.fillStyle = vary(base, rnd, 0.04);
-      g.fillRect(i * w + line / 2, j * w + line / 2, w - line, w - line);
+      c.set(look.panel).multiplyScalar(0.9 + rnd() * 0.2);
+      g.fillStyle = `#${c.getHexString()}`;
+      g.fillRect(i * w + 3, j * w + 3, w - 6, w - 6);
     }
 };
 
-/** Staggered bricks: cols × rows per tile. */
-const brickWall = (brick: string, mortar: string, cols: number, rows: number, gap = 6): Paint => (g, s, rnd) => {
-  g.fillStyle = mortar;
-  g.fillRect(0, 0, s, s);
-  const bw = s / cols, bh = s / rows;
-  for (let r = 0; r < rows; r++)
-    for (let c = -1; c < cols; c++) {
-      g.fillStyle = vary(brick, rnd);
-      g.fillRect(c * bw + (r % 2 ? bw / 2 : 0) + gap / 2, r * bh + gap / 2, bw - gap, bh - gap);
+/** Thin glowing lines on the borders of n × n squares. */
+const grid = (n: number, width: number): Paint => (g, s) => {
+  black(g, s, Math.random);
+  g.fillStyle = "#fff";
+  for (let i = 0; i <= n; i++) {
+    const p = (i * s) / n;
+    g.fillRect(p - width / 2, 0, width, s);
+    g.fillRect(0, p - width / 2, s, width);
+  }
+};
+
+/** Buildings: rows of windows high up, a few lit (one copy is 6 × 6 m, the height of a block). */
+const lit: Paint = (g, s, rnd) => {
+  black(g, s, rnd);
+  for (let c = 0; c < 4; c++)
+    for (let r = 0; r < 2; r++) {
+      if (rnd() < 0.45) continue;
+      g.fillStyle = `rgba(255,255,255,${0.35 + rnd() * 0.65})`;
+      g.fillRect(c * (s / 4) + 18, 40 + r * 70, s / 4 - 36, 40);
     }
 };
 
-const plaster: Paint = (g, s, rnd) => {
-  g.fillStyle = "#f6e2bd";
-  g.fillRect(0, 0, s, s);
-  for (let i = 0; i < 5; i++) { // a few chips showing the bricks underneath
-    const x = rnd() * s, y = rnd() * s;
-    g.fillStyle = "#e9a86f";
-    g.beginPath(); g.roundRect(x, y, 40 + rnd() * 50, 22 + rnd() * 16, 8); g.fill();
-  }
+/** Vertical slits of light (pillars, the reactor). */
+const slits: Paint = (g, s) => {
+  black(g, s, Math.random);
+  g.fillStyle = "#fff";
+  for (let i = 0; i < 4; i++) g.fillRect(i * (s / 4) + s / 8 - 4, s * 0.15, 8, s * 0.7);
 };
 
-/** A wooden crate face: frame, planks and a diagonal brace (UVs 0..1 per face). */
-const crate: Paint = (g, s, rnd) => {
-  g.fillStyle = "#8a4d1f";
-  g.fillRect(0, 0, s, s);
-  for (let i = 0; i < 5; i++) {
-    g.fillStyle = vary("#e08a3c", rnd, 0.05);
-    g.fillRect(0, (i * s) / 5 + 4, s, s / 5 - 8);
-  }
-  const f = s * 0.12;
-  g.fillStyle = "#a85a22";
-  g.fillRect(0, 0, s, f); g.fillRect(0, s - f, s, f); g.fillRect(0, 0, f, s); g.fillRect(s - f, 0, f, s);
-  g.save();
-  g.translate(s / 2, s / 2);
-  g.rotate(Math.PI / 4);
-  g.fillRect(-s * 0.7, -f / 2, s * 1.4, f);
-  g.restore();
+/** A crate face: a glowing frame around a dark panel (UVs 0..1 per face). */
+const frame: Paint = (g, s) => {
+  black(g, s, Math.random);
+  g.strokeStyle = "#fff";
+  g.lineWidth = 14;
+  g.strokeRect(20, 20, s - 40, s - 40);
+  g.lineWidth = 6;
+  g.beginPath(); g.moveTo(40, 40); g.lineTo(s - 40, s - 40); g.stroke();
 };
 
-/** Corrugated sheet: alternating light and dark ribs. */
-const ribs = (light: string, dark: string, n: number, band = ""): Paint => (g, s) => {
-  for (let i = 0; i < n; i++) {
-    g.fillStyle = i % 2 ? dark : light;
-    g.fillRect((i * s) / n, 0, s / n + 1, s);
-  }
-  if (band) { g.fillStyle = band; g.fillRect(0, 0, s, 10); g.fillRect(0, s - 10, s, 10); }
-};
-
-/** Concrete slabs with a yellow lane marking. */
-const concrete: Paint = (g, s, rnd) => {
-  tiles("#d4dbe2", "#9aa6b2", 2, 8)(g, s, rnd);
-  g.fillStyle = "#ffcf33";
-  g.fillRect(s * 0.47, 0, s * 0.06, s * 0.4);
-  g.fillRect(s * 0.47, s * 0.6, s * 0.06, s * 0.4);
-};
-
-const snow: Paint = (g, s, rnd) => {
-  g.fillStyle = "#f4f8ff";
-  g.fillRect(0, 0, s, s);
-  for (let i = 0; i < 12; i++) { // soft blue drifts
-    const x = rnd() * s, y = rnd() * s;
-    g.fillStyle = "#dfeaff";
-    g.beginPath(); g.ellipse(x, y, 60 + rnd() * 60, 20 + rnd() * 20, rnd() * Math.PI, 0, Math.PI * 2); g.fill();
+/** Containers: ribbed dark metal with a lit band near the top. */
+const ribs = (look: Look): Paint => (g, s) => {
+  for (let i = 0; i < 14; i++) {
+    g.fillStyle = i % 2 ? look.seam : look.panel;
+    g.fillRect((i * s) / 14, 0, s / 14 + 1, s);
   }
 };
-
-/** Rounded fieldstones in uneven courses. */
-const stone: Paint = (g, s, rnd) => {
-  g.fillStyle = "#5b6577";
-  g.fillRect(0, 0, s, s);
-  const rows = 6, bh = s / rows;
-  for (let r = 0; r < rows; r++) {
-    let x = -rnd() * 60;
-    while (x < s) {
-      const w = 60 + rnd() * 70;
-      g.fillStyle = vary("#a3afc2", rnd, 0.08);
-      g.beginPath(); g.roundRect(x + 4, r * bh + 4, w - 8, bh - 8, 14); g.fill();
-      x += w;
-    }
-  }
-};
-
-/** Log cabin wall: round logs, lighter in the middle. */
-const logs: Paint = (g, s, rnd) => {
-  const rows = 8, h = s / rows;
-  for (let r = 0; r < rows; r++) {
-    g.fillStyle = "#6e3b1c";
-    g.fillRect(0, r * h, s, h);
-    g.fillStyle = vary("#c7783e", rnd);
-    g.beginPath(); g.roundRect(0, r * h + 5, s, h - 10, h / 2); g.fill();
-    g.fillStyle = "rgba(255,230,190,0.25)";
-    g.fillRect(0, r * h + h * 0.3, s, h * 0.15);
-  }
-};
-
-const planks: Paint = (g, s, rnd) => {
-  g.fillStyle = "#8a6440";
-  g.fillRect(0, 0, s, s);
-  for (let i = 0; i < 6; i++) {
-    g.fillStyle = vary("#f2e2c8", rnd, 0.05);
-    g.fillRect(0, (i * s) / 6 + 3, s, s / 6 - 6);
-  }
-};
+const band: Paint = (g, s) => { black(g, s, Math.random); g.fillStyle = "#fff"; g.fillRect(0, s * 0.08, s, s * 0.05); };
 
 /** Box geometry whose UVs are in metres, so textures keep their scale on every face, coloured by tint. */
 function boxGeometry(sx: number, sy: number, sz: number, metres: boolean, tint = 0xffffff): THREE.BufferGeometry {
@@ -166,307 +133,204 @@ function boxGeometry(sx: number, sy: number, sz: number, metres: boolean, tint =
   return g;
 }
 
-/** Darkens the bottom of walls where they meet the ground: cheap stand-in for ambient occlusion. */
-function contactShade(mat: THREE.Material): void {
-  mat.onBeforeCompile = (shader) => {
-    shader.vertexShader = shader.vertexShader
-      .replace("#include <common>", "#include <common>\nvarying vec3 vWorldPos;\nvarying vec3 vWorldNormal;")
-      .replace("#include <begin_vertex>", "#include <begin_vertex>\nvWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;\nvWorldNormal = normalize(mat3(modelMatrix) * objectNormal);");
-    shader.fragmentShader = shader.fragmentShader
-      .replace("#include <common>", "#include <common>\nvarying vec3 vWorldPos;\nvarying vec3 vWorldNormal;")
-      .replace("#include <map_fragment>", `#include <map_fragment>
-        float side = 1.0 - abs(vWorldNormal.y);
-        diffuseColor.rgb *= mix(1.0, mix(0.7, 1.0, smoothstep(0.0, 0.5, vWorldPos.y)), side);`);
-  };
+/** Strips of light along the foot and the top of every wall, block and pillar. */
+function strips(map: MapDef): THREE.BufferGeometry | null {
+  const out: THREE.BufferGeometry[] = [];
+  for (const b of map.boxes) {
+    if (b.kind === "floor" || b.kind === "crate" || b.kind === "step" || b.max[1] - b.min[1] < 2) continue;
+    const sx = b.max[0] - b.min[0] + 0.04, sz = b.max[2] - b.min[2] + 0.04;
+    const cx = (b.min[0] + b.max[0]) / 2, cz = (b.min[2] + b.max[2]) / 2;
+    for (const y of [b.min[1] + 0.07, b.max[1] - 0.05]) {
+      const g = new THREE.BoxGeometry(sx, 0.08, sz);
+      g.translate(cx, y, cz);
+      out.push(g);
+    }
+  }
+  if (!out.length) return null;
+  const merged = mergeGeometries(out);
+  for (const g of out) g.dispose();
+  return merged;
 }
 
-type Look = {
-  floor: [Paint, number]; wall: [Paint, number]; block: [Paint, number]; step: [Paint, number];
-  metal: Paint; cap: number; window: (g: CanvasRenderingContext2D) => void;
-  sky: { horizon: number; zenith: number; ground: number; sun: number };
-  fog: [color: number, near: number, far: number];
-  hemi: [sky: number, ground: number, intensity: number];
-  sun: [color: number, intensity: number, dir: [number, number, number]];
-};
+/** A glowing frame on the floor around a bomb site. */
+function siteFrame(r: Rect): THREE.BufferGeometry {
+  const [x1, z1] = r.min, [x2, z2] = r.max, w = 0.18, y = 0.012;
+  const parts = [
+    [x1, z1, x2, z1 + w], [x1, z2 - w, x2, z2], [x1, z1, x1 + w, z2], [x2 - w, z1, x2, z2],
+  ].map(([a, b, c, d]) => {
+    const g = new THREE.PlaneGeometry(c - a, d - b);
+    g.rotateX(-Math.PI / 2);
+    g.translate((a + c) / 2, y, (b + d) / 2);
+    return g;
+  });
+  const merged = mergeGeometries(parts);
+  for (const g of parts) g.dispose();
+  return merged;
+}
 
-const LOOKS: Record<Theme, Look> = {
-  desert: {
-    floor: [tiles("#f4c98c", "#d9a066", 2), 4], wall: [brickWall("#e8875a", "#f7d3ac", 4, 8), 2.4],
-    block: [plaster, 4], step: [tiles("#f4c98c", "#d9a066", 2), 4],
-    metal: ribs("#4cc7c0", "#2f9f9a", 16), cap: 0xc8603a,
-    window: (g) => {
-      g.fillStyle = "#2a6fa8"; g.fillRect(0, 0, 128, 160);
-      g.fillStyle = "#123a5c"; g.fillRect(12, 12, 104, 136);
-      g.fillStyle = "#3f8fd0";
-      for (let i = 0; i < 6; i++) g.fillRect(18, 20 + i * 22, 92, 12);
-    },
-    sky: { horizon: 0xc8f0ff, zenith: 0x2f8ff0, ground: 0xf0d2a0, sun: 1 },
-    fog: [0xf5e2c4, 60, 200],
-    hemi: [0xbfe3ff, 0xf3c48a, 1.5],
-    sun: [0xfff3e0, 2.2, [18, 30, 10]],
-  },
-  harbor: {
-    floor: [concrete, 6], wall: [brickWall("#e04a3a", "#f3e2d4", 8, 28, 5), 2], block: [ribs("#9be3d2", "#74c9b6", 24), 3],
-    step: [concrete, 6], metal: ribs("#4cc7c0", "#2f9f9a", 16), cap: 0x5b6577,
-    window: (g) => {
-      g.fillStyle = "#33404f"; g.fillRect(0, 0, 128, 160);
-      for (let r = 0; r < 4; r++)
-        for (let c = 0; c < 3; c++) {
-          g.fillStyle = (r + c) % 3 ? "#7cc3ff" : "#b8e2ff";
-          g.fillRect(8 + c * 39, 8 + r * 37, 34, 32);
-        }
-    },
-    sky: { horizon: 0xd2f2ff, zenith: 0x3d9cff, ground: 0xb7c7d6, sun: 1 },
-    fog: [0xd8eaf5, 55, 190],
-    hemi: [0xc6e6ff, 0xb9b4a8, 1.5],
-    sun: [0xfff6e8, 2.2, [-14, 30, 16]],
-  },
-  snow: {
-    floor: [snow, 5], wall: [stone, 3], block: [logs, 2.4], step: [planks, 1.2],
-    metal: ribs("#7fb6e8", "#5a90c4", 16), cap: 0xf4f8ff,
-    window: (g) => { // a lit window: warm light inside a cold village
-      g.fillStyle = "#5a3418"; g.fillRect(0, 0, 128, 160);
-      g.fillStyle = "#ffd86b"; g.fillRect(14, 14, 100, 132);
-      g.fillStyle = "#5a3418"; g.fillRect(60, 14, 8, 132); g.fillRect(14, 76, 100, 8);
-      g.fillStyle = "#ffffff"; g.fillRect(0, 0, 128, 12);
-    },
-    sky: { horizon: 0xf2f7ff, zenith: 0x7fb4ec, ground: 0xe6eef8, sun: 0.5 },
-    fog: [0xe4ecf6, 35, 150],
-    hemi: [0xdfeaff, 0xc9d3e2, 1.7],
-    sun: [0xf2f6ff, 1.8, [12, 30, -14]],
-  },
-};
+/** A hologram letter floating over a bomb site: always faces you, glows through the fog. */
+function siteLetter(letter: string, color: number): THREE.Sprite {
+  const c = document.createElement("canvas");
+  c.width = c.height = 256;
+  const g = c.getContext("2d")!;
+  g.font = "400 210px 'Lilita One', system-ui, sans-serif";
+  g.textAlign = "center";
+  g.textBaseline = "middle";
+  const col = `#${new THREE.Color(color).getHexString()}`;
+  g.shadowColor = col;
+  g.shadowBlur = 30;
+  g.fillStyle = col;
+  g.fillText(letter, 128, 140);
+  g.shadowBlur = 0;
+  g.fillStyle = "rgba(255,255,255,0.85)";
+  g.font = "400 150px 'Lilita One', system-ui, sans-serif";
+  g.fillText(letter, 128, 140);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, transparent: true, depthWrite: false, fog: false,
+    blending: THREE.AdditiveBlending }));
+  s.scale.setScalar(3.2);
+  return s;
+}
 
 function sky(look: Look): THREE.Mesh {
-  const c = (hex: number) => new THREE.Color(hex);
   const mat = new THREE.ShaderMaterial({
     side: THREE.BackSide,
     depthWrite: false,
     fog: false,
-    uniforms: {
-      sun: { value: new THREE.Vector3(...look.sun[2]).normalize() }, horizon: { value: c(look.sky.horizon) },
-      zenith: { value: c(look.sky.zenith) }, ground: { value: c(look.sky.ground) }, sunAmount: { value: look.sky.sun },
-    },
+    uniforms: { top: { value: new THREE.Color(look.sky[0]) }, horizon: { value: new THREE.Color(look.sky[1]) } },
     vertexShader: `varying vec3 vDir;
       void main() { vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-    fragmentShader: `varying vec3 vDir; uniform vec3 sun, horizon, zenith, ground; uniform float sunAmount;
+    fragmentShader: `varying vec3 vDir; uniform vec3 top, horizon;
       void main() {
-        float h = max(vDir.y, 0.0);
-        vec3 col = mix(horizon, zenith, smoothstep(0.0, 0.6, h));
-        col = mix(col, ground, smoothstep(0.0, -0.15, vDir.y));
-        float s = dot(vDir, sun);
-        col = mix(col, vec3(1.0, 0.97, 0.85), step(0.9985, s) * sunAmount); // a flat cartoon sun disc
-        col += vec3(1.0, 0.8, 0.5) * pow(max(s, 0.0), 24.0) * 0.25 * sunAmount;
+        float h = vDir.y;
+        vec3 col = mix(horizon, top, smoothstep(-0.02, 0.45, h));
+        col = mix(col, top * 0.5, smoothstep(0.0, -0.3, h));
         gl_FragColor = vec4(col, 1.0);
       }`,
   });
-  const mesh = new THREE.Mesh(new THREE.SphereGeometry(200, 32, 16), mat);
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(300, 32, 16), mat);
   mesh.renderOrder = -1;
   return mesh;
 }
 
-/** Puffy low-poly clouds in a ring around the map; the outline pass draws their edges. */
-function clouds(): THREE.Mesh {
-  let seed = 3;
+/** Stars over the upper sky. */
+function stars(): THREE.Points {
+  let seed = 11;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const n = 700, pos = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) {
+    const a = rnd() * Math.PI * 2, y = 0.15 + rnd() * 0.85, r = Math.sqrt(1 - y * y);
+    pos.set([Math.cos(a) * r * 280, y * 280, Math.sin(a) * r * 280], i * 3);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+  const p = new THREE.Points(geo, new THREE.PointsMaterial({ color: 0xffffff, size: 1.6, sizeAttenuation: false, fog: false }));
+  p.frustumCulled = false;
+  return p;
+}
+
+/** A city all around, far outside the walls: dark towers with lit windows. */
+function city(look: Look, half: number): THREE.Mesh {
+  let seed = 5;
   const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
   const geos: THREE.BufferGeometry[] = [];
-  for (let i = 0; i < 9; i++) {
-    const a = (i / 9) * Math.PI * 2 + rnd() * 0.4, r = 120 + rnd() * 40, y = 38 + rnd() * 25;
-    for (let j = 0; j < 4; j++) {
-      const g = new THREE.IcosahedronGeometry(6 + rnd() * 5, 1);
-      g.scale(1.4, 0.8, 1);
-      g.translate(Math.cos(a) * r + (j - 1.5) * 8, y + rnd() * 3, Math.sin(a) * r + rnd() * 5);
-      geos.push(g);
-    }
+  for (let i = 0; i < 70; i++) {
+    const a = (i / 70) * Math.PI * 2 + rnd() * 0.05, r = half + 90 + rnd() * 80;
+    const w = 12 + rnd() * 16, h = 14 + rnd() * 40;
+    const g = boxGeometry(w, h, w, true);
+    g.rotateY(-a);
+    g.translate(Math.cos(a) * r, h / 2 - 2, Math.sin(a) * r);
+    geos.push(g);
   }
-  const mesh = new THREE.Mesh(mergeGeometries(geos), toon({ color: 0xffffff, fog: false }));
+  const windows = canvas((g, s, rnd) => {
+    g.fillStyle = "#06060c";
+    g.fillRect(0, 0, s, s);
+    const c = new THREE.Color(look.neon), d = new THREE.Color(look.second);
+    for (let x = 0; x < 8; x++)
+      for (let y = 0; y < 8; y++) {
+        if (rnd() < 0.55) continue;
+        const k = rnd() < 0.3 ? d : rnd() < 0.5 ? c : new THREE.Color(0xfff2d0);
+        g.fillStyle = `rgba(${(k.r * 255) | 0},${(k.g * 255) | 0},${(k.b * 255) | 0},${0.15 + rnd() * 0.35})`;
+        g.fillRect(x * (s / 8) + 12, y * (s / 8) + 16, s / 8 - 24, s / 8 - 30);
+      }
+  });
+  const t = new THREE.CanvasTexture(windows);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.repeat.set(1 / 16, 1 / 16);
+  const mesh = new THREE.Mesh(mergeGeometries(geos), new THREE.MeshBasicMaterial({ map: t, fog: false }));
   for (const g of geos) g.dispose();
   return mesh;
 }
 
-/** A painted letter for a bomb site, faded like old spray paint. */
-function siteSign(letter: string): THREE.Mesh {
-  const c = document.createElement("canvas");
-  c.width = c.height = 256;
-  const g = c.getContext("2d")!;
-  g.font = "900 220px system-ui, sans-serif";
-  g.textAlign = "center";
-  g.textBaseline = "middle";
-  g.lineWidth = 14;
-  g.strokeStyle = "#14161c";
-  g.strokeText(letter, 128, 140);
-  g.fillStyle = "#ff3b2f";
-  g.fillText(letter, 128, 140);
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  return new THREE.Mesh(new THREE.PlaneGeometry(2.4, 2.4),
-    new THREE.MeshBasicMaterial({ map: t, transparent: true, polygonOffset: true, polygonOffsetFactor: -2 }));
-}
+export type World = { group: THREE.Group; neon: THREE.Color; update: (dt: number, camera: THREE.Vector3) => void; dispose: () => void };
 
-/** Windows on the buildings: visual only, the walls stay solid. */
-function windows(map: MapDef, look: Look): THREE.Mesh | null {
-  if (!map.decor.windows.length) return null;
-  const c = document.createElement("canvas");
-  c.width = 128; c.height = 160;
-  look.window(c.getContext("2d")!);
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  const geos = map.decor.windows.map(([x, y, z, ry]) => {
-    const p = new THREE.PlaneGeometry(1.1, 1.4);
-    p.rotateY(ry);
-    p.translate(x, y, z);
-    return p;
-  });
-  const lit = map.theme === "snow";
-  return new THREE.Mesh(mergeGeometries(geos), lit ? new THREE.MeshBasicMaterial({ map: t }) : toon({ map: t }));
-}
-
-/** Pines: three stacked cones, green going white at the tips. The trunk is a map box. */
-function trees(map: MapDef): THREE.Mesh | null {
-  if (!map.decor.trees?.length) return null;
-  const green = new THREE.Color(0x2f9a5a), white = new THREE.Color(0xf4f8ff), c = new THREE.Color();
-  const geos: THREE.BufferGeometry[] = [];
-  for (const [x, z] of map.decor.trees)
-    for (const [r, h, y] of [[1.7, 2.4, 3.1], [1.3, 2.1, 4.5], [0.9, 1.8, 5.7]]) {
-      const g = new THREE.ConeGeometry(r, h, 8).toNonIndexed();
-      const pos = g.getAttribute("position");
-      const colors = new Float32Array(pos.count * 3);
-      for (let i = 0; i < pos.count; i++) {
-        c.copy(green).lerp(white, pos.getY(i) / h > 0.2 ? 1 : 0); // snow caps, not a gradient
-        colors.set([c.r, c.g, c.b], i * 3);
-      }
-      g.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-      g.deleteAttribute("uv");
-      g.translate(x, y, z);
-      geos.push(g);
-    }
-  const mesh = new THREE.Mesh(mergeGeometries(geos), toon({ vertexColors: true }));
-  mesh.castShadow = mesh.receiveShadow = true;
-  return mesh;
-}
-
-/** Caps along the top of walls and buildings, only where nobody can stand on them. */
-function caps(map: MapDef): THREE.BufferGeometry[] {
-  const out: THREE.BufferGeometry[] = [];
-  for (const b of map.boxes) {
-    if ((b.kind !== "wall" && b.kind !== "block") || b.max[1] < 4) continue;
-    const sx = b.max[0] - b.min[0] + 0.2, sz = b.max[2] - b.min[2] + 0.2;
-    const g = boxGeometry(sx, 0.18, sz, true);
-    g.translate((b.min[0] + b.max[0]) / 2, b.max[1] + 0.09, (b.min[2] + b.max[2]) / 2);
-    out.push(g);
-  }
-  return out;
-}
-
-const FLAKES = 1500, SNOW_BOX = 36;
-
-/** Snow falling around the camera, wrapped inside a box that follows it. */
-function snowfall(): { points: THREE.Points; update: (dt: number, at: THREE.Vector3) => void } {
-  const pos = new Float32Array(FLAKES * 3);
-  for (let i = 0; i < pos.length; i++) pos[i] = (Math.random() - 0.5) * SNOW_BOX;
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-  const points = new THREE.Points(geo, new THREE.PointsMaterial({ color: 0xffffff, size: 0.07, transparent: true, opacity: 0.9, depthWrite: false }));
-  points.frustumCulled = false;
-  let t = 0;
-  return {
-    points,
-    update: (dt, at) => {
-      t += dt;
-      for (let i = 0; i < FLAKES; i++) {
-        pos[i * 3 + 1] -= dt * (0.8 + (i % 7) * 0.08);
-        pos[i * 3] += Math.sin(t + i) * dt * 0.2;
-        if (pos[i * 3 + 1] < -SNOW_BOX / 2) pos[i * 3 + 1] += SNOW_BOX;
-      }
-      points.position.set(Math.floor(at.x / SNOW_BOX) * SNOW_BOX, at.y, Math.floor(at.z / SNOW_BOX) * SNOW_BOX);
-      geo.attributes.position.needsUpdate = true;
-    },
-  };
-}
-
-export type World = { group: THREE.Group; update: (dt: number, camera: THREE.Vector3) => void; dispose: () => void };
-
-/** Everything a map looks like: its boxes with the theme's textures, decor, sky, fog and light. */
+/** Everything a map looks like: its boxes in the theme's colours, strips of light, the site markers, sky and city. */
 export function buildWorld(scene: THREE.Scene, map: MapDef): World {
   const look = LOOKS[map.theme];
   const group = new THREE.Group();
-  const tex = (p: [Paint, number]) => texture(p[0], p[1]);
-  const mat = (map: THREE.Texture, shade = true) => {
-    const m = toon({ map, vertexColors: true });
-    if (shade) contactShade(m);
-    return m;
-  };
+  const neon = new THREE.Color(look.neon), second = new THREE.Color(look.second);
+  const mat = (s: { map: THREE.Texture; emissiveMap: THREE.Texture }, glow: THREE.Color, k = 1) =>
+    new THREE.MeshLambertMaterial({ ...s, vertexColors: true, emissive: glow, emissiveIntensity: k });
+  const wall = surface(panels(look, 2), black, 4);
   const materials: Record<Kind, THREE.Material> = {
-    floor: mat(tex(look.floor), false),
-    wall: mat(tex(look.wall)),
-    block: mat(tex(look.block)),
-    crate: mat(texture(crate, 1)),
-    metal: mat(texture(look.metal, 2)),
-    step: mat(tex(look.step)),
-    container: mat(texture(ribs("#ffffff", "#d6d6d6", 14, "#555b66"), 2.4)),
-    wood: mat(texture(planks, 1.2)),
+    floor: mat(surface(panels(look, 2), grid(2, 5), 4), neon, 0.55),
+    wall: mat(wall, neon),
+    block: mat(surface(panels(look, 2), lit, 6), neon, 0.5),
+    crate: mat(surface(fill(look.panel), frame, 1), second, 0.9),
+    metal: mat(surface(fill(look.seam), slits, 2), neon),
+    step: mat(surface(panels(look, 2), grid(2, 5), 2), neon, 0.55),
+    container: mat(surface(ribs(look), band, 2.6), second, 0.8),
+    wood: mat(surface(fill(look.panel), frame, 1.2), second, 0.6),
   };
 
-  // One mesh per material: the static map costs a handful of draw calls however many boxes it has.
+  // one mesh per material: the static map costs a handful of draw calls however many boxes it has
   const byKind = new Map<Kind, THREE.BufferGeometry[]>();
   for (const b of map.boxes) {
     const sx = b.max[0] - b.min[0], sy = b.max[1] - b.min[1], sz = b.max[2] - b.min[2];
-    const g = boxGeometry(sx, sy, sz, b.kind !== "crate", b.tint);
+    const tint = b.kind === "container" && b.tint !== undefined ? new THREE.Color(b.tint).lerp(new THREE.Color(0xffffff), 0.6).getHex() : 0xffffff;
+    const g = boxGeometry(sx, sy, sz, b.kind !== "crate", tint);
     g.translate((b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2, (b.min[2] + b.max[2]) / 2);
     byKind.set(b.kind, [...(byKind.get(b.kind) ?? []), g]);
   }
   for (const [kind, geos] of byKind) {
     const mesh = new THREE.Mesh(mergeGeometries(geos), materials[kind]);
     for (const g of geos) g.dispose();
-    mesh.castShadow = kind !== "floor";
-    mesh.receiveShadow = true;
     group.add(mesh);
   }
-  const capGeos = caps(map);
-  if (capGeos.length) {
-    const capMesh = new THREE.Mesh(mergeGeometries(capGeos), toon({ color: look.cap }));
-    capMesh.castShadow = capMesh.receiveShadow = true;
-    group.add(capMesh);
-  }
-  for (const extra of [windows(map, look), trees(map)]) if (extra) group.add(extra);
+  const light = strips(map);
+  if (light) group.add(new THREE.Mesh(light, new THREE.MeshBasicMaterial({ color: neon })));
+  const frames = mergeGeometries([siteFrame(map.sites.A), siteFrame(map.sites.B)]);
+  group.add(new THREE.Mesh(frames, new THREE.MeshBasicMaterial({ color: second, transparent: true, opacity: 0.9 })));
   for (const site of ["A", "B"] as const) {
-    const [x, y, z, ry] = map.decor.signs[site];
-    const sign = siteSign(site);
-    sign.position.set(x, y, z);
-    sign.rotation.y = ry;
-    group.add(sign);
+    const r = map.sites[site], letter = siteLetter(site, look.second);
+    letter.position.set((r.min[0] + r.max[0]) / 2, 4.2, (r.min[1] + r.max[1]) / 2);
+    group.add(letter);
   }
 
-  group.add(sky(look), clouds());
-  group.add(new THREE.HemisphereLight(look.hemi[0], look.hemi[1], look.hemi[2]));
-  const sun = new THREE.DirectionalLight(look.sun[0], look.sun[1]);
-  sun.position.set(...look.sun[2]);
-  sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
-  const r = map.half + 6;
-  Object.assign(sun.shadow.camera, { left: -r, right: r, top: r, bottom: -r, far: 100 });
-  sun.shadow.bias = -0.0005;
-  sun.shadow.normalBias = 0.02;
-  group.add(sun);
-  const snowing = map.theme === "snow" ? snowfall() : null;
-  if (snowing) group.add(snowing.points);
+  group.add(sky(look), stars(), city(look, map.half));
+  group.add(new THREE.HemisphereLight(new THREE.Color(look.sky[1]).lerp(new THREE.Color(0xffffff), 0.5), 0x101018, 1.4));
+  const key = new THREE.DirectionalLight(0xdfe4ff, 0.9);
+  key.position.set(14, 30, 10);
+  group.add(key);
   scene.add(group);
   scene.fog = new THREE.Fog(...look.fog);
 
   return {
     group,
-    update: (dt, camera) => snowing?.update(dt, camera),
+    neon,
+    update: () => {},
     dispose: () => {
       scene.remove(group);
       group.traverse((o) => {
-        if (!(o instanceof THREE.Mesh || o instanceof THREE.Points)) return;
+        if (!(o instanceof THREE.Mesh || o instanceof THREE.Points || o instanceof THREE.Sprite)) return;
         o.geometry.dispose();
         for (const m of [o.material].flat()) {
-          for (const v of Object.values(m)) if (v instanceof THREE.Texture && v !== gradient) v.dispose();
+          for (const v of Object.values(m)) if (v instanceof THREE.Texture) v.dispose();
           m.dispose();
         }
       });
-      sun.shadow.map?.dispose();
     },
   };
 }
