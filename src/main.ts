@@ -398,6 +398,7 @@ async function goOnline(room: string, map?: string): Promise<void> {
     cg?.game.updateRoom({ roomId: room, isJoinable: true, inviteParams: { roomId: room } });
   } catch (e) {
     hud.error((e as Error).message);
+    document.exitPointerLock();
     mode = null;
     gameplay();
   }

@@ -154,7 +154,7 @@ export class Room {
     if (r.phase === "warmup" || r.phase === "freeze" ||
         (r.phase === "live" && !r.bomb.planted && this.tick - this.liveSince < ticks(P.LATE_JOIN))) this.spawn(p);
     this.events.push({ type: "join", id: p.id, name: p.name });
-    send({ type: "welcome", id: p.id, tick: this.tick, room: this.id });
+    send({ type: "welcome", id: p.id, tick: this.tick, room: this.id, v: P.VERSION });
     return p;
   }
 

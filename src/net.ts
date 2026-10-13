@@ -1,7 +1,7 @@
 import { TICK } from "../shared/constants.ts";
 import { wsUrl } from "./config";
 import {
-  decodePlayers, INTERP_TICKS, type ClientMsg, type RemotePlayer, type RosterEntry, type RoundState, type ServerMsg,
+  decodePlayers, INTERP_TICKS, VERSION, type ClientMsg, type RemotePlayer, type RosterEntry, type RoundState, type ServerMsg,
   type Snapshot,
 } from "../shared/protocol.ts";
 
@@ -52,6 +52,11 @@ export class Net {
 
   private receive(m: ServerMsg): void {
     if (m.type === "welcome") {
+      if (m.v !== VERSION) {
+        this.close();
+        this.rejectReady(new Error("Clutchzone has been updated: reload the page to play the new version"));
+        return;
+      }
       this.id = m.id;
       this.resolveReady(m.id);
     } else if (m.type === "full") {

@@ -3,6 +3,9 @@ import type { Part } from "./hitbox.ts";
 import type { Site } from "./map.ts";
 import type { Cmd, Sim } from "./sim.ts";
 
+/** Bump whenever an older client would misread the server (new maps, weapons, messages). Portal builds
+ * (itch.io, the Windows app) are uploaded separately and can lag behind the website. */
+export const VERSION = 2;
 export const MAX_PLAYERS = 10;
 export const SNAPSHOT_EVERY = 2; // ticks: 30 snapshots per second
 export const INTERP_TICKS = 6; // other players are drawn 100 ms in the past
@@ -78,7 +81,7 @@ export type You = {
 
 // server → client
 export type ServerMsg =
-  | { type: "welcome"; id: number; tick: number; room: string }
+  | { type: "welcome"; id: number; tick: number; room: string; v: number }
   | { type: "full" }
   | { type: "pong"; t: number }
   | { type: "snap"; tick: number; you: You; p: PlayerTuple[]; r?: RosterEntry[]; g?: RoundState; events: GameEvent[] };

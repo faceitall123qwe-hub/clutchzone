@@ -35,6 +35,13 @@ let seq = 0;
 const input = (room: Room, p: Player, cmd: Partial<Cmd>, viewTick = room.tick) =>
   room.onMessage(p, { type: "input", cmd: { ...base, ...cmd, seq: ++seq + p.lastSeq }, viewTick });
 
+test("welcome tells the client the protocol version, so an outdated portal build can say so", () => {
+  const { inbox, join } = setup();
+  const a = join("a");
+  const welcome = inbox.get(a.id)![0];
+  assert.ok(welcome.type === "welcome" && welcome.v === P.VERSION);
+});
+
 test("inputs move the player and snapshots acknowledge them", () => {
   const { room, inbox, join } = setup();
   const a = join("a");
