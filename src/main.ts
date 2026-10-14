@@ -718,6 +718,8 @@ if (import.meta.env.DEV) {
   Object.assign(window, {
     __game: {
       start: () => { if (!mode) goRange(); hud.menu(false); devInput = true; },
+      /** Film frame by frame (see film.ts): call before join(); the controls end up in window.__film. */
+      film: async () => { Object.assign(window, { __film: (await import("./film")).startFilm() }); },
       join: async (map?: string) => {
         hud.menu(false);
         devInput = true;

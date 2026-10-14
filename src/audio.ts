@@ -1,28 +1,68 @@
 /** Synthesised sounds, so there are no audio files to license or load. */
-let ctx: AudioContext | null = null;
+let live: AudioContext | null = null;
+let ctx: BaseAudioContext | null = null; // live, or an offline context while a tape is rendered
 let out: GainNode | null = null;
 let noise: AudioBuffer | null = null;
 let master = 0.8;
 
 export function unlockAudio(): void {
-  if (!ctx) {
-    ctx = new AudioContext();
+  if (tape) return;
+  if (!live) {
+    ctx = live = new AudioContext();
     out = ctx.createGain();
     out.gain.value = master;
     out.connect(ctx.destination);
   }
-  if (ctx.state === "suspended") void ctx.resume();
-  if (!noise) {
-    noise = ctx.createBuffer(1, ctx.sampleRate * 1.2, ctx.sampleRate);
-    const d = noise.getChannelData(0);
-    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  if (live.state === "suspended") void live.resume();
+  if (!noise) noise = whiteNoise(live);
+}
+
+function whiteNoise(c: BaseAudioContext): AudioBuffer {
+  const b = c.createBuffer(1, c.sampleRate * 1.2, c.sampleRate);
+  const d = b.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  return b;
+}
+
+// Dev, filming frame by frame: the page's clock only moves when a frame is shot, so live sound can't keep
+// up. Sounds are written to a tape with their time instead, and renderTape() plays it into a buffer.
+let tape: { t: number; name: string; args: unknown[] }[] | null = null;
+let tapeClock = () => 0;
+let at = 0; // while rendering a tape: when the sound being scheduled starts
+const taped = (name: string, args: unknown[]) => (tape ? (tape.push({ t: tapeClock(), name, args }), true) : false);
+
+export function startTape(clock: () => number): void {
+  tape = [];
+  tapeClock = clock;
+}
+
+export async function renderTape(seconds: number, rate = 48000): Promise<AudioBuffer> {
+  const entries = tape ?? [];
+  tape = null;
+  const off = new OfflineAudioContext(2, Math.ceil(rate * seconds), rate);
+  const saved = { ctx, out, noise };
+  ctx = off;
+  out = off.createGain();
+  out.gain.value = master;
+  out.connect(off.destination);
+  noise = whiteNoise(off);
+  const sounds: Record<string, (...a: never[]) => void> = {
+    gunshot, hitSound, click, footstep, beep, explosion, roundEnd, levelUpSound, actClick,
+  };
+  for (const e of entries) {
+    at = e.t;
+    sounds[e.name](...(e.args as never[]));
   }
+  at = 0;
+  const buffer = await off.startRendering();
+  ({ ctx, out, noise } = saved);
+  return buffer;
 }
 
 /** Dev: the game's sound as a stream, for recording footage with audio. */
 export function audioTrack(): MediaStreamTrack | null {
-  if (!ctx || !out) return null;
-  const dest = ctx.createMediaStreamDestination();
+  if (!live || !out) return null;
+  const dest = live.createMediaStreamDestination();
   out.connect(dest);
   return dest.stream.getAudioTracks()[0];
 }
@@ -33,8 +73,8 @@ export function setVolume(v: number): void {
 }
 
 function env(g: GainNode, peak: number, decay: number, delay = 0): void {
-  const t = ctx!.currentTime + delay;
-  g.gain.setValueAtTime(0.0001, ctx!.currentTime);
+  const t = ctx!.currentTime + at + delay;
+  g.gain.setValueAtTime(0.0001, ctx!.currentTime + at);
   g.gain.setValueAtTime(Math.max(peak, 0.0002), t);
   g.gain.exponentialRampToValueAtTime(0.0001, t + decay);
 }
@@ -49,14 +89,14 @@ function burst(volume: number, cutoff: number, decay: number, rate = 0.85, type:
   const g = ctx!.createGain();
   env(g, volume, decay, delay);
   src.connect(f).connect(g).connect(out!);
-  src.start(ctx!.currentTime + delay);
-  src.stop(ctx!.currentTime + delay + decay + 0.05);
+  src.start(ctx!.currentTime + at + delay);
+  src.stop(ctx!.currentTime + at + delay + decay + 0.05);
 }
 
 function tone(volume: number, from: number, to: number, decay: number, type: OscillatorType = "sine", delay = 0): void {
   const o = ctx!.createOscillator();
   o.type = type;
-  const t = ctx!.currentTime + delay;
+  const t = ctx!.currentTime + at + delay;
   o.frequency.setValueAtTime(from, t);
   o.frequency.exponentialRampToValueAtTime(to, t + decay);
   const g = ctx!.createGain();
@@ -68,6 +108,7 @@ function tone(volume: number, from: number, to: number, decay: number, type: Osc
 
 /** weapon: id in WEAPONS; volume: 1 for our own gun, lower for other players' shots by distance. */
 export function gunshot(weapon: number, volume = 1): void {
+  if (taped("gunshot", [weapon, volume])) return;
   if (!ctx || !noise) return;
   if (weapon === 1) { // pistol: short and sharp
     burst(0.45 * volume, 4200, 0.09, 1.1);
@@ -102,17 +143,20 @@ function bolt(): void {
 }
 
 export function hitSound(head: boolean): void {
+  if (taped("hitSound", [head])) return;
   if (!ctx) return;
   tone(head ? 0.25 : 0.08, head ? 1750 : 900, head ? 1700 : 880, head ? 0.25 : 0.05, head ? "triangle" : "square");
 }
 
 export function click(): void {
+  if (taped("click", [])) return;
   if (!ctx) return;
   tone(0.08, 320, 300, 0.04);
 }
 
 /** One footstep: a soft scuff and thud, quieter with distance. */
 export function footstep(volume: number): void {
+  if (taped("footstep", [volume])) return;
   if (!ctx || !noise || volume < 0.02) return;
   burst(0.22 * volume, 700 + Math.random() * 300, 0.07, 0.6);
   tone(0.18 * volume, 90, 50, 0.06);
@@ -120,12 +164,14 @@ export function footstep(volume: number): void {
 
 /** The planted bomb's beep. */
 export function beep(volume: number): void {
+  if (taped("beep", [volume])) return;
   if (!ctx || volume < 0.02) return;
   tone(0.25 * volume, 1900, 1850, 0.07, "square");
 }
 
 /** volume by distance; a deep boom with a long rumble. */
 export function explosion(volume: number): void {
+  if (taped("explosion", [volume])) return;
   if (!ctx || !noise) return;
   burst(1.2 * volume, 1800, 0.25, 0.7);
   burst(0.9 * volume, 400, 1.6, 0.35);
@@ -134,6 +180,7 @@ export function explosion(volume: number): void {
 
 /** Round over: a rising pair of notes for a win, a falling pair for a loss. */
 export function roundEnd(won: boolean): void {
+  if (taped("roundEnd", [won])) return;
   if (!ctx) return;
   const [a, b] = won ? [520, 780] : [440, 330];
   tone(0.15, a, a, 0.22, "triangle");
@@ -142,12 +189,14 @@ export function roundEnd(won: boolean): void {
 
 /** Level up: a quick rising arpeggio. */
 export function levelUpSound(): void {
+  if (taped("levelUpSound", [])) return;
   if (!ctx) return;
   [523, 659, 784, 1047].forEach((f, i) => tone(0.13, f, f, 0.25, "triangle", i * 0.09));
 }
 
 /** A soft click every half second while planting or defusing. */
 export function actClick(): void {
+  if (taped("actClick", [])) return;
   if (!ctx) return;
   tone(0.06, 2600, 2400, 0.03, "square");
 }
