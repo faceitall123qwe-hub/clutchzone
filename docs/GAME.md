@@ -100,7 +100,7 @@ The first-person gun, drawn in its own pass, gets inverted-hull outlines instead
 ## Decisions
 | Date | Decision | Why |
 |---|---|---|
-| 2026-10-06 | Browser 3D on three.js + TypeScript + Vite | Playable from a link; Claude can run and screenshot it |
+| 2026-10-06 | Browser 3D on three.js + TypeScript + Vite | Playable from a link, easy to test and screenshot |
 | 2026-10-07 | Multiplayer CS-like shooter | Tim's choice |
 | 2026-10-07 | Authoritative Node.js server + WebSocket, shared movement code | Cheat resistance; client and server must agree on movement |
 | 2026-10-07 | Map = list of axis-aligned boxes, custom AABB collision (no physics engine) | Same code on server, cheap, precise enough for a blockout shooter |
